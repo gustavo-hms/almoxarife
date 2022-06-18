@@ -1,7 +1,12 @@
 use anyhow::anyhow;
 use anyhow::Result;
+use async_std::fs;
 use async_std::path::PathBuf;
+use async_std::process::Child;
+use async_std::process::Command;
 use std::env;
+use std::io::Error;
+use std::process::ExitStatus;
 use url::Url;
 
 const NAME: &'static str = env!("CARGO_BIN_NAME");
@@ -36,16 +41,35 @@ impl Plugin {
         }
     }
 
-    // pub fn update(&self) -> Result<Child, Error> {}
+    async fn repository_path_exists(&self) -> bool {
+        fs::metadata(&self.repository_path).await.is_ok()
+    }
 
-    // fn clone_repo(&self) -> Result<Child, Error> {
-    //     let url = format!("{}.git", self.url);
-    //     Command::new("git").arg("clone").arg(url).spawn()
-    // }
+    pub async fn update(&self) -> Result<ExitStatus, Error> {
+        if self.repository_path_exists().await {
+            self.pull().await
+        } else {
+            self.clone_repo().await
+        }
+    }
 
-    // fn update(&self) -> Result<Child, Error> {
-    //     Command::new("git").arg("pull").spawn()
-    // }
+    async fn clone_repo(&self) -> Result<ExitStatus, Error> {
+        let url = format!("{}.git", self.url);
+        Command::new("git")
+            .arg("clone")
+            .arg(url)
+            .arg(&self.repository_path)
+            .status()
+            .await
+    }
+
+    async fn pull(&self) -> Result<ExitStatus, Error> {
+        Command::new("git")
+            .arg("pull")
+            .arg(&self.repository_path)
+            .status()
+            .await
+    }
 }
 
 pub struct PluginBuilder {
@@ -103,11 +127,55 @@ pub struct Xdg {
 
 impl Xdg {
     pub fn new() -> Xdg {
-        let config = env::var("XDG_CONFIG_HOME").unwrap_or(String::from("~/.config"));
+        let home = env::var("HOME").expect("Could not read HOME environment variable");
+        let config = env::var("XDG_CONFIG_HOME").unwrap_or(format!("{home}/.config"));
         let config = PathBuf::from(config);
-        let data = env::var("XDG_DATA_HOME").unwrap_or(String::from("~/.local/share"));
+        let data = env::var("XDG_DATA_HOME").unwrap_or(format!("{home}/.local/share"));
         let data = PathBuf::from(data);
 
         Xdg { config, data }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use async_std::{fs, prelude::FutureExt, task};
+    use url::Url;
+
+    use super::*;
+
+    #[test]
+    fn repository_path_exists() {
+        let xdg = Xdg::new();
+        let plugin = Plugin::builder("balaio", &xdg)
+            .set_url(Url::parse("https://github.com/gustavo-hms/balaio").unwrap())
+            .build()
+            .unwrap();
+
+        task::block_on(async {
+            println!("{:?}", &plugin.repository_path);
+            println!("{}", plugin.repository_path_exists().await);
+        })
+    }
+
+    #[test]
+    fn update() {
+        let xdg = Xdg::new();
+        let luar = Plugin::builder("luar", &xdg)
+            .set_url(Url::parse("https://github.com/gustavo-hms/luar").unwrap())
+            .build()
+            .unwrap();
+
+        let peneira = Plugin::builder("peneira", &xdg)
+            .set_url(Url::parse("https://github.com/gustavo-hms/peneira").unwrap())
+            .build()
+            .unwrap();
+
+        task::block_on(async {
+            let luar = luar.update();
+            let peneira = peneira.update();
+            let result = luar.join(peneira).await;
+            println!("{:?}", result);
+        })
     }
 }
