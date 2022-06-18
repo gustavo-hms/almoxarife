@@ -1,0 +1,10 @@
+[package]
+name = "exotica"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+url = "2.2"
+async-std = { version = "1.11.0", features = [ "unstable", "attributes" ] }
+toml_edit = "0.14"
+anyhow = "1.0"
