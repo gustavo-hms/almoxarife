@@ -84,27 +84,19 @@ fn build_plugin(name: &str, table: &Table, xdg: &Xdg) -> Result<Plugin> {
 }
 
 async fn create_dirs(xdg: &Xdg) -> Result<()> {
-    let autoload = async {
-        if xdg.autoload.metadata().await.is_ok() {
-            asyncfs::remove_dir_all(&xdg.autoload).await?;
-        }
-
-        asyncfs::create_dir_all(&xdg.autoload).await?;
-        Ok::<(), Error>(())
-    };
-
-    let data = async {
-        if !xdg.data.metadata().await.is_ok() {
-            asyncfs::create_dir_all(&xdg.data).await?;
-        }
-
-        Ok::<(), Error>(())
-    };
-
-    match autoload.join(data).await {
-        (err @ Err(_), _) | (_, err @ Err(_)) => return err,
-        _ => Ok(()),
+    // The following operations should be so fast that it's OK (and much
+    // simpler) to execute them sequentially.
+    if xdg.autoload.metadata().await.is_ok() {
+        asyncfs::remove_dir_all(&xdg.autoload).await?;
     }
+
+    asyncfs::create_dir_all(&xdg.autoload).await?;
+
+    if !xdg.data.metadata().await.is_ok() {
+        asyncfs::create_dir_all(&xdg.data).await?;
+    }
+
+    Ok(())
 }
 
 // #[cfg(test)]
