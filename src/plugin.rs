@@ -66,7 +66,7 @@ impl Plugin {
     async fn pull(&self) -> Result<ExitStatus, Error> {
         Command::new("git")
             .arg("pull")
-            .arg(&self.repository_path)
+            .current_dir(&self.repository_path)
             .status()
             .await
     }
