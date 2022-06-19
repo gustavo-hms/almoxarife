@@ -1,10 +1,11 @@
-use std::fs;
-use std::future::join;
-
 use anyhow::bail;
 use anyhow::Context;
+use anyhow::Error;
 use anyhow::Result;
+use async_std::fs as asyncfs;
 use async_std::prelude::FutureExt;
+use async_std::task;
+use std::fs;
 use toml_edit::Document;
 use toml_edit::Item;
 use toml_edit::Table;
@@ -21,6 +22,9 @@ fn main() -> Result<()> {
     let plugins = parse("balaio.toml", &xdg).context("Couldn't parse balaio.toml")?;
 
     println!("{:#?}", plugins);
+
+    task::block_on(async { create_dirs(&xdg).await })?;
+
     Ok(())
 }
 
@@ -80,17 +84,27 @@ fn build_plugin(name: &str, table: &Table, xdg: &Xdg) -> Result<Plugin> {
 }
 
 async fn create_dirs(xdg: &Xdg) -> Result<()> {
-    let (autoload, data) = xdg.autoload.metadata().join(xdg.data.metadata()).await;
+    let autoload = async {
+        if xdg.autoload.metadata().await.is_ok() {
+            asyncfs::remove_dir_all(&xdg.autoload).await?;
+        }
 
-    if !autoload.is_ok() {
-        fs::create_dir_all(&xdg.autoload)?;
+        asyncfs::create_dir_all(&xdg.autoload).await?;
+        Ok::<(), Error>(())
+    };
+
+    let data = async {
+        if !xdg.data.metadata().await.is_ok() {
+            asyncfs::create_dir_all(&xdg.data).await?;
+        }
+
+        Ok::<(), Error>(())
+    };
+
+    match autoload.join(data).await {
+        (err @ Err(_), _) | (_, err @ Err(_)) => return err,
+        _ => Ok(()),
     }
-
-    if !data.is_ok() {
-        fs::create_dir_all(&xdg.data)?;
-    }
-
-    Ok(())
 }
 
 // #[cfg(test)]
