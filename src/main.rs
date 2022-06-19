@@ -1,8 +1,10 @@
 use std::fs;
+use std::future::join;
 
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use async_std::prelude::FutureExt;
 use toml_edit::Document;
 use toml_edit::Item;
 use toml_edit::Table;
@@ -75,6 +77,20 @@ fn build_plugin(name: &str, table: &Table, xdg: &Xdg) -> Result<Plugin> {
     }
 
     builder.build()
+}
+
+async fn create_dirs(xdg: &Xdg) -> Result<()> {
+    let (autoload, data) = xdg.autoload.metadata().join(xdg.data.metadata()).await;
+
+    if !autoload.is_ok() {
+        fs::create_dir_all(&xdg.autoload)?;
+    }
+
+    if !data.is_ok() {
+        fs::create_dir_all(&xdg.data)?;
+    }
+
+    Ok(())
 }
 
 // #[cfg(test)]
