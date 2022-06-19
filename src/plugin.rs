@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use async_std::fs;
+use async_std::path::Path;
 use async_std::path::PathBuf;
 use async_std::process::Child;
 use async_std::process::Command;
@@ -24,11 +25,8 @@ pub struct Plugin {
 
 impl Plugin {
     pub fn builder(name: &str, xdg: &Xdg) -> PluginBuilder {
-        let path = format!("{}/{}", NAME, name);
-        let repository_path = xdg.data.join(&path);
-
-        let path = format!("kak/autoload/{}", path);
-        let link_path = xdg.config.join(path);
+        let repository_path = xdg.data.join(name);
+        let link_path = xdg.autoload.join(name);
 
         PluginBuilder {
             name: name.to_string(),
@@ -121,46 +119,58 @@ impl PluginBuilder {
 }
 
 pub struct Xdg {
-    config: PathBuf,
-    data: PathBuf,
+    pub config: PathBuf,
+    pub autoload: PathBuf,
+    pub data: PathBuf,
 }
 
 impl Xdg {
     pub fn new() -> Xdg {
         let home = env::var("HOME").expect("Could not read HOME environment variable");
-        let config = env::var("XDG_CONFIG_HOME").unwrap_or(format!("{home}/.config"));
-        let config = PathBuf::from(config);
-        let data = env::var("XDG_DATA_HOME").unwrap_or(format!("{home}/.local/share"));
-        let data = PathBuf::from(data);
+        let home = Path::new(&home);
 
-        Xdg { config, data }
+        let config = if let Ok(config) = env::var("XDG_CONFIG_HOME") {
+            PathBuf::from(&config)
+        } else {
+            home.join(".config")
+        };
+
+        let data = if let Ok(data) = env::var("XDG_DATA_HOME") {
+            PathBuf::from(&data).join("balaio")
+        } else {
+            home.join(".local/share/balaio")
+        };
+
+        let autoload = config.join("kak/autoload/balaio");
+
+        Xdg {
+            config,
+            autoload,
+            data,
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use async_std::{fs, prelude::FutureExt, task};
+    use async_std::path::PathBuf;
+
+    use async_std::{prelude::FutureExt, task};
     use url::Url;
 
     use super::*;
 
     #[test]
-    fn repository_path_exists() {
-        let xdg = Xdg::new();
-        let plugin = Plugin::builder("balaio", &xdg)
-            .set_url(Url::parse("https://github.com/gustavo-hms/balaio").unwrap())
-            .build()
-            .unwrap();
-
-        task::block_on(async {
-            println!("{:?}", &plugin.repository_path);
-            println!("{}", plugin.repository_path_exists().await);
-        })
-    }
-
-    #[test]
     fn update() {
-        let xdg = Xdg::new();
+        let config = PathBuf::from(tempfile::tempdir().unwrap().path());
+        let data = PathBuf::from(tempfile::tempdir().unwrap().path());
+
+        let xdg = Xdg {
+            config: config.clone(),
+            autoload: config.clone(),
+            data: data.clone(),
+        };
+
         let luar = Plugin::builder("luar", &xdg)
             .set_url(Url::parse("https://github.com/gustavo-hms/luar").unwrap())
             .build()
@@ -172,10 +182,22 @@ mod test {
             .unwrap();
 
         task::block_on(async {
-            let luar = luar.update();
-            let peneira = peneira.update();
-            let result = luar.join(peneira).await;
-            println!("{:?}", result);
+            let first = luar.update();
+            let second = peneira.update();
+            let (first, second) = first.join(second).await;
+
+            assert!(first.unwrap().success());
+            assert!(second.unwrap().success());
+            assert!(data.join("luar").metadata().await.is_ok());
+            assert!(data.join("peneira").metadata().await.is_ok());
+
+            // Check if the second call to update doesn't try to clone again
+            let first = luar.update();
+            let second = peneira.update();
+            let (first, second) = first.join(second).await;
+
+            assert!(first.unwrap().success());
+            assert!(second.unwrap().success());
         })
     }
 }
