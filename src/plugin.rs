@@ -1,20 +1,18 @@
 use anyhow::anyhow;
+use anyhow::Context;
 use anyhow::Result;
 use async_std::fs;
-use async_std::path::Path;
-use async_std::path::PathBuf;
-use async_std::process::Child;
+use async_std::os::unix;
 use async_std::process::Command;
 use std::env;
-use std::io::Error;
-use std::process::ExitStatus;
+use std::iter;
+use std::path::Path;
+use std::path::PathBuf;
 use url::Url;
-
-const NAME: &'static str = env!("CARGO_BIN_NAME");
 
 #[derive(Debug)]
 pub struct Plugin {
-    name: String,
+    pub name: String,
     url: Url,
     disabled: bool,
     config: Option<String>,
@@ -39,34 +37,75 @@ impl Plugin {
         }
     }
 
+    pub fn iter(&self) -> Box<dyn Iterator<Item = &Plugin> + '_> {
+        if self.disabled {
+            return Box::new(iter::empty());
+        }
+
+        let children = self.children.iter().flat_map(|child| child.iter());
+        Box::new(iter::once(self).chain(children))
+    }
+
     async fn repository_path_exists(&self) -> bool {
         fs::metadata(&self.repository_path).await.is_ok()
     }
 
-    pub async fn update(&self) -> Result<ExitStatus, Error> {
+    pub async fn update(&self) -> Result<()> {
         if self.repository_path_exists().await {
-            self.pull().await
+            self.pull().await?;
         } else {
-            self.clone_repo().await
+            self.clone_repo().await?;
         }
+
+        println!("Plugin {} updated", self.name);
+        self.symlink().await
     }
 
-    async fn clone_repo(&self) -> Result<ExitStatus, Error> {
+    async fn symlink(&self) -> Result<()> {
+        if !self.disabled {
+            unix::fs::symlink(&self.repository_path, &self.link_path)
+                .await
+                .context("Couldn't activate the plugin")?;
+        }
+
+        Ok(())
+    }
+
+    async fn clone_repo(&self) -> Result<()> {
         let url = format!("{}.git", self.url);
-        Command::new("git")
+        println!("Cloning {}", self.name);
+
+        let status = Command::new("git")
             .arg("clone")
             .arg(url)
             .arg(&self.repository_path)
             .status()
-            .await
+            .await?;
+
+        match status.code() {
+            None | Some(0) => Ok(()),
+            Some(code) => Err(anyhow!(
+                "Git exited with status {code} while cloning {}",
+                self.name
+            )),
+        }
     }
 
-    async fn pull(&self) -> Result<ExitStatus, Error> {
-        Command::new("git")
+    async fn pull(&self) -> Result<()> {
+        println!("Pulling from {}", self.name);
+        let status = Command::new("git")
             .arg("pull")
             .current_dir(&self.repository_path)
             .status()
-            .await
+            .await?;
+
+        match status.code() {
+            None | Some(0) => Ok(()),
+            Some(code) => Err(anyhow!(
+                "Git exited with status {code} while pulling from {}",
+                self.name
+            )),
+        }
     }
 }
 

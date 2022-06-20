@@ -1,10 +1,9 @@
 use anyhow::bail;
 use anyhow::Context;
-use anyhow::Error;
 use anyhow::Result;
-use async_std::fs as asyncfs;
-use async_std::prelude::FutureExt;
 use async_std::task;
+use futures::stream::FuturesUnordered;
+use futures::stream::StreamExt;
 use std::fs;
 use toml_edit::Document;
 use toml_edit::Item;
@@ -20,10 +19,19 @@ use plugin::Xdg;
 fn main() -> Result<()> {
     let xdg = Xdg::new();
     let plugins = parse("balaio.toml", &xdg).context("Couldn't parse balaio.toml")?;
+    create_dirs(&xdg)?;
 
-    println!("{:#?}", plugins);
+    let plugins = plugins.iter().flat_map(|p| p.iter());
 
-    task::block_on(async { create_dirs(&xdg).await })?;
+    task::block_on(async {
+        let mut updates: FuturesUnordered<_> = plugins.map(Plugin::update).collect();
+
+        while let Some(result) = updates.next().await {
+            if let Err(err) = result {
+                println!("{}", err);
+            }
+        }
+    });
 
     Ok(())
 }
@@ -83,50 +91,16 @@ fn build_plugin(name: &str, table: &Table, xdg: &Xdg) -> Result<Plugin> {
     builder.build()
 }
 
-async fn create_dirs(xdg: &Xdg) -> Result<()> {
-    // The following operations should be so fast that it's OK (and much
-    // simpler) to execute them sequentially.
-    if xdg.autoload.metadata().await.is_ok() {
-        asyncfs::remove_dir_all(&xdg.autoload).await?;
+fn create_dirs(xdg: &Xdg) -> Result<()> {
+    if xdg.autoload.metadata().is_ok() {
+        fs::remove_dir_all(&xdg.autoload)?;
     }
 
-    asyncfs::create_dir_all(&xdg.autoload).await?;
+    fs::create_dir_all(&xdg.autoload)?;
 
-    if !xdg.data.metadata().await.is_ok() {
-        asyncfs::create_dir_all(&xdg.data).await?;
+    if !xdg.data.metadata().is_ok() {
+        fs::create_dir_all(&xdg.data)?;
     }
 
     Ok(())
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use async_std::path::PathBuf;
-
-//     #[test]
-//     fn check_urls() {
-//         let xdg = Xdg {
-//             config: PathBuf::from("~/.config"),
-//             data: PathBuf::from("~/.local/share"),
-//         };
-
-//         let plugin = Plugin::new(
-//             String::from("luar"),
-//             Url::parse("https://github.com/gustavo-hms/luar").unwrap(),
-//             false,
-//             String::new(),
-//             &xdg,
-//         );
-
-//         assert_eq!(
-//             plugin.repository_path.to_str().unwrap(),
-//             format!("~/.local/share/{}/luar", NAME)
-//         );
-
-//         assert_eq!(
-//             plugin.link_path.to_str().unwrap(),
-//             format!("~/.config/kak/autoload/{}/luar", NAME)
-//         );
-//     }
-// }
