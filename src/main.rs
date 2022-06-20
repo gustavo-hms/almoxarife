@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -22,6 +23,7 @@ fn main() -> Result<()> {
     create_dirs(&xdg)?;
 
     let plugins = plugins.iter().flat_map(|p| p.iter());
+    let mut got_error = false;
 
     task::block_on(async {
         let mut updates: FuturesUnordered<_> = plugins.map(Plugin::update).collect();
@@ -29,11 +31,16 @@ fn main() -> Result<()> {
         while let Some(result) = updates.next().await {
             if let Err(err) = result {
                 println!("{}", err);
+                got_error = true;
             }
         }
     });
 
-    Ok(())
+    if got_error {
+        Err(anyhow!("Some plugins could not be updated"))
+    } else {
+        Ok(())
+    }
 }
 
 fn parse(file: &str, xdg: &Xdg) -> Result<Vec<Plugin>> {
