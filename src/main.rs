@@ -2,10 +2,12 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use async_std::prelude::StreamExt;
 use async_std::task;
 use futures::stream::FuturesUnordered;
-use futures::stream::StreamExt;
 use std::fs;
+use std::fs::File;
+use std::io::Write;
 use toml_edit::Document;
 use toml_edit::Item;
 use toml_edit::Table;
@@ -19,14 +21,14 @@ use plugin::Xdg;
 
 fn main() -> Result<()> {
     let xdg = Xdg::new();
-    let plugins = parse("balaio.toml", &xdg).context("Couldn't parse balaio.toml")?;
-    create_dirs(&xdg)?;
+    let plugins_tree = parse("balaio.toml", &xdg).context("Couldn't parse balaio.toml")?;
+    let plugins: Vec<&Plugin> = plugins_tree.iter().flat_map(Plugin::iter).collect();
 
-    let plugins = plugins.iter().flat_map(|p| p.iter());
+    create_dirs(&xdg)?;
     let mut got_error = false;
 
     task::block_on(async {
-        let mut updates: FuturesUnordered<_> = plugins.map(Plugin::update).collect();
+        let mut updates: FuturesUnordered<_> = plugins.iter().map(|&p| p.update()).collect();
 
         while let Some(result) = updates.next().await {
             if let Err(err) = result {
@@ -35,6 +37,14 @@ fn main() -> Result<()> {
             }
         }
     });
+
+    let mut kak =
+        File::create(xdg.autoload.join("balaio.kak")).context("Couldn't create kak file")?;
+
+    for config in plugins.into_iter().map(Plugin::config) {
+        kak.write_all(config.as_bytes())
+            .context("Couldn't write kak file")?;
+    }
 
     if got_error {
         Err(anyhow!("Some plugins could not be updated"))
@@ -65,7 +75,7 @@ fn build_plugin(name: &str, table: &Table, xdg: &Xdg) -> Result<Plugin> {
     for element in table.iter() {
         match element {
             ("url", Item::Value(Value::String(url))) => {
-                builder = builder.set_url(Url::parse(&url.value())?);
+                builder = builder.set_url(Url::parse(url.value())?);
             }
 
             ("url", _) => bail!("Expecting a string for the `url` field of plugin {name}"),
@@ -105,7 +115,7 @@ fn create_dirs(xdg: &Xdg) -> Result<()> {
 
     fs::create_dir_all(&xdg.autoload)?;
 
-    if !xdg.data.metadata().is_ok() {
+    if xdg.data.metadata().is_err() {
         fs::create_dir_all(&xdg.data)?;
     }
 

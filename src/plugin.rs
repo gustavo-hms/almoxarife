@@ -15,7 +15,7 @@ pub struct Plugin {
     pub name: String,
     url: Url,
     disabled: bool,
-    config: Option<String>,
+    config: String,
     repository_path: PathBuf,
     link_path: PathBuf,
     children: Vec<Plugin>,
@@ -30,7 +30,7 @@ impl Plugin {
             name: name.to_string(),
             url: None,
             disabled: false,
-            config: None,
+            config: String::new(),
             repository_path,
             link_path,
             children: Vec::new(),
@@ -57,7 +57,6 @@ impl Plugin {
             self.clone_repo().await?;
         }
 
-        println!("Plugin {} updated", self.name);
         self.symlink().await
     }
 
@@ -65,15 +64,16 @@ impl Plugin {
         if !self.disabled {
             unix::fs::symlink(&self.repository_path, &self.link_path)
                 .await
-                .context("Couldn't activate the plugin")?;
+                .with_context(|| format!("Couldn't activate the plugin {}", self.name))?;
         }
 
+        println!("Plugin {} updated.", self.name);
         Ok(())
     }
 
     async fn clone_repo(&self) -> Result<()> {
         let url = format!("{}.git", self.url);
-        println!("Cloning {}", self.name);
+        println!("Cloning {}.", self.name);
 
         let status = Command::new("git")
             .arg("clone")
@@ -92,7 +92,7 @@ impl Plugin {
     }
 
     async fn pull(&self) -> Result<()> {
-        println!("Pulling from {}", self.name);
+        println!("Pulling from {}.", self.name);
         let status = Command::new("git")
             .arg("pull")
             .current_dir(&self.repository_path)
@@ -107,13 +107,17 @@ impl Plugin {
             )),
         }
     }
+
+    pub fn config(&self) -> String {
+        format!("try %[ require-module {} ]\n{}\n", self.name, self.config)
+    }
 }
 
 pub struct PluginBuilder {
     name: String,
     url: Option<Url>,
     disabled: bool,
-    config: Option<String>,
+    config: String,
     repository_path: PathBuf,
     link_path: PathBuf,
     children: Vec<Plugin>,
@@ -126,7 +130,7 @@ impl PluginBuilder {
     }
 
     pub fn set_config(mut self, config: String) -> PluginBuilder {
-        self.config = Some(config);
+        self.config = config;
         self
     }
 
