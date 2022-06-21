@@ -50,14 +50,15 @@ impl Plugin {
         fs::metadata(&self.repository_path).await.is_ok()
     }
 
-    pub async fn update(&self) -> Result<()> {
+    pub async fn update(&self) -> Result<String> {
         if self.repository_path_exists().await {
             self.pull().await?;
         } else {
             self.clone_repo().await?;
         }
 
-        self.symlink().await
+        self.symlink().await?;
+        Ok(self.config())
     }
 
     async fn symlink(&self) -> Result<()> {

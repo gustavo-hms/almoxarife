@@ -1,13 +1,14 @@
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
+use anyhow::Error;
 use anyhow::Result;
-use async_std::prelude::StreamExt;
+use async_std::fs::File;
+use async_std::io::WriteExt;
 use async_std::task;
 use futures::stream::FuturesUnordered;
+use futures::stream::StreamExt;
 use std::fs;
-use std::fs::File;
-use std::io::Write;
 use toml_edit::Document;
 use toml_edit::Item;
 use toml_edit::Table;
@@ -21,30 +22,37 @@ use plugin::Xdg;
 
 fn main() -> Result<()> {
     let xdg = Xdg::new();
-    let plugins_tree = parse("balaio.toml", &xdg).context("Couldn't parse balaio.toml")?;
-    let plugins: Vec<&Plugin> = plugins_tree.iter().flat_map(Plugin::iter).collect();
-
+    let plugins = parse("balaio.toml", &xdg).context("Couldn't parse balaio.toml")?;
     create_dirs(&xdg)?;
     let mut got_error = false;
 
     task::block_on(async {
-        let mut updates: FuturesUnordered<_> = plugins.iter().map(|&p| p.update()).collect();
+        let mut kak = File::create(xdg.autoload.join("balaio.kak"))
+            .await
+            .context("Couldn't create kak file")?;
+
+        let mut updates: FuturesUnordered<_> = plugins
+            .iter()
+            .flat_map(Plugin::iter)
+            .map(Plugin::update)
+            .collect();
 
         while let Some(result) = updates.next().await {
-            if let Err(err) = result {
-                println!("{}", err);
-                got_error = true;
+            match result {
+                Ok(config) => kak
+                    .write_all(config.as_bytes())
+                    .await
+                    .context("Couldn't write kak file")?,
+
+                Err(error) => {
+                    println!("{}", error);
+                    got_error = true;
+                }
             }
         }
-    });
 
-    let mut kak =
-        File::create(xdg.autoload.join("balaio.kak")).context("Couldn't create kak file")?;
-
-    for config in plugins.into_iter().map(Plugin::config) {
-        kak.write_all(config.as_bytes())
-            .context("Couldn't write kak file")?;
-    }
+        Ok::<(), Error>(())
+    })?;
 
     if got_error {
         Err(anyhow!("Some plugins could not be updated"))
