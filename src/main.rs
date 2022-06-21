@@ -9,6 +9,7 @@ use async_std::task;
 use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
 use std::fs;
+use std::path::Path;
 use toml_edit::Document;
 use toml_edit::Item;
 use toml_edit::Table;
@@ -22,7 +23,9 @@ use plugin::Xdg;
 
 fn main() -> Result<()> {
     let xdg = Xdg::new();
-    let plugins = parse("balaio.toml", &xdg).context("Couldn't parse balaio.toml")?;
+    let plugins =
+        parse(xdg.config.join("balaio.toml"), &xdg).context("Couldn't parse balaio.toml")?;
+
     create_dirs(&xdg)?;
     let mut got_error = false;
 
@@ -61,7 +64,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn parse(file: &str, xdg: &Xdg) -> Result<Vec<Plugin>> {
+fn parse<P: AsRef<Path>>(file: P, xdg: &Xdg) -> Result<Vec<Plugin>> {
     let toml = fs::read_to_string(file)?;
     let doc = toml.parse::<Document>()?;
     let mut plugins = Vec::new();
