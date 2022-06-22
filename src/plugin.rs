@@ -3,6 +3,7 @@ use anyhow::Context;
 use anyhow::Result;
 use async_std::fs;
 use async_std::os::unix;
+use async_std::path::PathBuf as AsyncPathBuf;
 use async_std::process::Command;
 use std::env;
 use std::iter;
@@ -11,9 +12,15 @@ use std::path::PathBuf;
 use url::Url;
 
 #[derive(Debug)]
+pub enum Location {
+    Url(Url),
+    Path(AsyncPathBuf),
+}
+
+#[derive(Debug)]
 pub struct Plugin {
     pub name: String,
-    location: Url,
+    location: Location,
     disabled: bool,
     config: String,
     repository_path: PathBuf,
@@ -51,10 +58,12 @@ impl Plugin {
     }
 
     pub async fn update(&self) -> Result<String> {
-        if self.repository_path_exists().await {
-            self.pull().await?;
-        } else {
-            self.clone_repo().await?;
+        if let Location::Url(url) = &self.location {
+            if self.repository_path_exists().await {
+                self.pull().await?;
+            } else {
+                self.clone_repo(url).await?;
+            }
         }
 
         self.symlink().await?;
@@ -72,8 +81,8 @@ impl Plugin {
         Ok(())
     }
 
-    async fn clone_repo(&self) -> Result<()> {
-        let location = format!("{}.git", self.location);
+    async fn clone_repo(&self, url: &Url) -> Result<()> {
+        let location = format!("{}.git", url);
         println!("Cloning {}.", self.name);
 
         let status = Command::new("git")
@@ -116,7 +125,7 @@ impl Plugin {
 
 pub struct PluginBuilder {
     name: String,
-    location: Option<Url>,
+    location: Option<Location>,
     disabled: bool,
     config: String,
     repository_path: PathBuf,
@@ -125,8 +134,12 @@ pub struct PluginBuilder {
 }
 
 impl PluginBuilder {
-    pub fn set_location(mut self, location: Url) -> PluginBuilder {
-        self.location = Some(location);
+    pub fn set_location(mut self, location: &str) -> PluginBuilder {
+        match Url::parse(location) {
+            Ok(url) => self.location = Some(Location::Url(url)),
+            _ => self.location = Some(Location::Path(location.into())),
+        };
+
         self
     }
 

@@ -14,7 +14,6 @@ use toml_edit::Document;
 use toml_edit::Item;
 use toml_edit::Table;
 use toml_edit::Value;
-use url::Url;
 
 mod plugin;
 
@@ -94,7 +93,7 @@ fn build_plugin(name: &str, table: &Table, xdg: &Xdg) -> Result<Plugin> {
     for element in table.iter() {
         match element {
             ("location", Item::Value(Value::String(location))) => {
-                builder = builder.set_location(Url::parse(location.value())?);
+                builder = builder.set_location(location.value());
             }
 
             ("location", _) => {
