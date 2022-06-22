@@ -23,16 +23,21 @@ use plugin::Xdg;
 
 fn main() -> Result<()> {
     let xdg = Xdg::new();
+    let balaio = xdg.config.join("balaio.toml");
     let plugins =
-        parse(xdg.config.join("balaio.toml"), &xdg).context("Couldn't parse balaio.toml")?;
-
+        parse(&balaio, &xdg).context(format!("Couldn't parse {}", balaio.to_str().unwrap()))?;
     create_dirs(&xdg)?;
+
     let mut got_error = false;
 
     task::block_on(async {
         let mut kak = File::create(xdg.autoload.join("balaio.kak"))
             .await
             .context("Couldn't create kak file")?;
+
+        kak.write_all("hook global KakBegin .* %🧺\n".as_bytes())
+            .await
+            .context("Couldn't write kak file")?;
 
         let mut updates: FuturesUnordered<_> = plugins
             .iter()
@@ -54,6 +59,9 @@ fn main() -> Result<()> {
             }
         }
 
+        kak.write_all("🧺".as_bytes())
+            .await
+            .context("Couldn't write kak file")?;
         Ok::<(), Error>(())
     })?;
 
@@ -85,11 +93,13 @@ fn build_plugin(name: &str, table: &Table, xdg: &Xdg) -> Result<Plugin> {
 
     for element in table.iter() {
         match element {
-            ("url", Item::Value(Value::String(url))) => {
-                builder = builder.set_url(Url::parse(url.value())?);
+            ("location", Item::Value(Value::String(location))) => {
+                builder = builder.set_location(Url::parse(location.value())?);
             }
 
-            ("url", _) => bail!("Expecting a string for the `url` field of plugin {name}"),
+            ("location", _) => {
+                bail!("Expecting a string for the `location` field of plugin {name}")
+            }
 
             ("disabled", Item::Value(Value::Boolean(disabled))) => {
                 builder = builder.set_disabled(*disabled.value());

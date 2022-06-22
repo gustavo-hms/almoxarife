@@ -13,7 +13,7 @@ use url::Url;
 #[derive(Debug)]
 pub struct Plugin {
     pub name: String,
-    url: Url,
+    location: Url,
     disabled: bool,
     config: String,
     repository_path: PathBuf,
@@ -28,7 +28,7 @@ impl Plugin {
 
         PluginBuilder {
             name: name.to_string(),
-            url: None,
+            location: None,
             disabled: false,
             config: String::new(),
             repository_path,
@@ -73,12 +73,12 @@ impl Plugin {
     }
 
     async fn clone_repo(&self) -> Result<()> {
-        let url = format!("{}.git", self.url);
+        let location = format!("{}.git", self.location);
         println!("Cloning {}.", self.name);
 
         let status = Command::new("git")
             .arg("clone")
-            .arg(url)
+            .arg(location)
             .arg(&self.repository_path)
             .status()
             .await?;
@@ -116,7 +116,7 @@ impl Plugin {
 
 pub struct PluginBuilder {
     name: String,
-    url: Option<Url>,
+    location: Option<Url>,
     disabled: bool,
     config: String,
     repository_path: PathBuf,
@@ -125,8 +125,8 @@ pub struct PluginBuilder {
 }
 
 impl PluginBuilder {
-    pub fn set_url(mut self, url: Url) -> PluginBuilder {
-        self.url = Some(url);
+    pub fn set_location(mut self, location: Url) -> PluginBuilder {
+        self.location = Some(location);
         self
     }
 
@@ -146,9 +146,9 @@ impl PluginBuilder {
     }
 
     pub fn build(self) -> Result<Plugin> {
-        let url = self
-            .url
-            .ok_or_else(|| anyhow!("Missing `url` field for plugin {}", self.name))?;
+        let location = self
+            .location
+            .ok_or_else(|| anyhow!("Missing `location` field for plugin {}", self.name))?;
 
         Ok(Plugin {
             name: self.name,
@@ -157,7 +157,7 @@ impl PluginBuilder {
             repository_path: self.repository_path,
             link_path: self.link_path,
             children: self.children,
-            url,
+            location: location,
         })
     }
 }
@@ -216,12 +216,12 @@ mod test {
         };
 
         let luar = Plugin::builder("luar", &xdg)
-            .set_url(Url::parse("https://github.com/gustavo-hms/luar").unwrap())
+            .set_location(Url::parse("https://github.com/gustavo-hms/luar").unwrap())
             .build()
             .unwrap();
 
         let peneira = Plugin::builder("peneira", &xdg)
-            .set_url(Url::parse("https://github.com/gustavo-hms/peneira").unwrap())
+            .set_location(Url::parse("https://github.com/gustavo-hms/peneira").unwrap())
             .build()
             .unwrap();
 
