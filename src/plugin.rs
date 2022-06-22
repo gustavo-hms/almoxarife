@@ -3,7 +3,6 @@ use anyhow::Context;
 use anyhow::Result;
 use async_std::fs;
 use async_std::os::unix;
-use async_std::path::PathBuf as AsyncPathBuf;
 use async_std::process::Command;
 use std::env;
 use std::iter;
@@ -14,7 +13,7 @@ use url::Url;
 #[derive(Debug)]
 pub enum Location {
     Url(Url),
-    Path(AsyncPathBuf),
+    Path(PathBuf),
 }
 
 #[derive(Debug)]
@@ -158,10 +157,14 @@ impl PluginBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Plugin> {
+    pub fn build(mut self) -> Result<Plugin> {
         let location = self
             .location
             .ok_or_else(|| anyhow!("Missing `location` field for plugin {}", self.name))?;
+
+        if let Location::Path(path) = &location {
+            self.repository_path = path.clone();
+        };
 
         Ok(Plugin {
             name: self.name,
@@ -170,7 +173,7 @@ impl PluginBuilder {
             repository_path: self.repository_path,
             link_path: self.link_path,
             children: self.children,
-            location: location,
+            location,
         })
     }
 }
