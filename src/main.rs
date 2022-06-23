@@ -34,7 +34,7 @@ fn main() -> Result<()> {
             .await
             .context("Couldn't create kak file")?;
 
-        kak.write_all("hook global KakBegin .* %🧺\n".as_bytes())
+        kak.write_all(CONFIG_PRELUDE.as_bytes())
             .await
             .context("Couldn't write kak file")?;
 
@@ -70,6 +70,19 @@ fn main() -> Result<()> {
         Ok(())
     }
 }
+
+const CONFIG_PRELUDE: &str = r#"
+hook global KakBegin .* %🧺
+
+add-highlighter shared/balaio regions
+add-highlighter shared/balaio/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
+add-highlighter shared/balaio/ region '^\s*config:[^\n]' '\n' ref kakrc
+
+hook -group balaio global WinCreate .*balaio[.]yaml %{
+    add-highlighter window/balaio ref balaio
+    hook -once -always window WinClose .* %{ remove-highlighter window/balaio }
+}
+"#;
 
 fn parse<P: AsRef<Path>>(file: P, xdg: &Xdg) -> Result<Vec<Plugin>> {
     let toml = fs::read_to_string(file)?;
