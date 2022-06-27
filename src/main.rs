@@ -10,10 +10,9 @@ use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
 use std::fs;
 use std::path::Path;
-use toml_edit::Document;
-use toml_edit::Item;
-use toml_edit::Table;
-use toml_edit::Value;
+use yaml_rust::yaml::Hash;
+use yaml_rust::yaml::Yaml;
+use yaml_rust::yaml::YamlLoader;
 
 mod plugin;
 
@@ -22,9 +21,10 @@ use plugin::Xdg;
 
 fn main() -> Result<()> {
     let xdg = Xdg::new();
-    let balaio = xdg.config.join("balaio.toml");
+    let balaio = xdg.config.join("balaio.yaml");
     let plugins =
         parse(&balaio, &xdg).context(format!("Couldn't parse {}", balaio.to_str().unwrap()))?;
+
     create_dirs(&xdg)?;
 
     let mut got_error = false;
@@ -58,6 +58,7 @@ fn main() -> Result<()> {
             }
         }
 
+        // Close top level block
         kak.write_all("🧺".as_bytes())
             .await
             .context("Couldn't write kak file")?;
@@ -85,56 +86,67 @@ hook -group balaio global WinCreate .*balaio[.]yaml %{
 "#;
 
 fn parse<P: AsRef<Path>>(file: P, xdg: &Xdg) -> Result<Vec<Plugin>> {
-    let toml = fs::read_to_string(file)?;
-    let doc = toml.parse::<Document>()?;
+    let yaml = fs::read_to_string(file)?;
+    let doc = YamlLoader::load_from_str(&yaml)?;
+
+    if doc.is_empty() {
+        bail!("Configuration file has no YAML element");
+    }
+
     let mut plugins = Vec::new();
 
-    for (key, value) in doc.iter() {
-        if let Item::Table(table) = value {
-            plugins.push(build_plugin(key, table, xdg)?);
-        } else {
-            bail!("Unexpected field {key}")
+    match &doc[0] {
+        Yaml::Hash(hash) => {
+            for element in hash.iter() {
+                if let (Yaml::String(key), Yaml::Hash(hash)) = element {
+                    plugins.push(build_plugin(key, hash, xdg)?);
+                } else {
+                    bail!("Unexpected field {element:?}")
+                }
+            }
         }
+
+        _ => bail!("Couldn't parse configuration file"),
     }
 
     Ok(plugins)
 }
 
-fn build_plugin(name: &str, table: &Table, xdg: &Xdg) -> Result<Plugin> {
+fn build_plugin(name: &str, hash: &Hash, xdg: &Xdg) -> Result<Plugin> {
     let mut builder = Plugin::builder(name, xdg);
 
-    for element in table.iter() {
-        match element {
-            ("location", Item::Value(Value::String(location))) => {
-                builder = builder.set_location(location.value());
+    for (key, value) in hash.iter() {
+        match (key.as_str(), value) {
+            (Some("location"), Yaml::String(location)) => {
+                builder = builder.set_location(location);
             }
 
-            ("location", _) => {
+            (Some("location"), _) => {
                 bail!("Expecting a string for the `location` field of plugin {name}")
             }
 
-            ("disabled", Item::Value(Value::Boolean(disabled))) => {
-                builder = builder.set_disabled(*disabled.value());
+            (Some("disabled"), Yaml::Boolean(disabled)) => {
+                builder = builder.set_disabled(*disabled);
             }
 
-            ("disabled", _) => {
+            (Some("disabled"), _) => {
                 bail!("Expecting a boolean for the `disabled` field of plugin {name}")
             }
 
-            ("config", Item::Value(Value::String(config))) => {
-                builder = builder.set_config(config.value().clone());
+            (Some("config"), Yaml::String(config)) => {
+                builder = builder.set_config(config.clone());
             }
 
-            ("config", _) => {
+            (Some("config"), _) => {
                 bail!("Expecting a string for the `config` field of plugin {name}")
             }
 
-            (key, Item::Table(table)) => {
-                let child = build_plugin(key, table, xdg)?;
+            (Some(key), Yaml::Hash(hash)) => {
+                let child = build_plugin(key, hash, xdg)?;
                 builder = builder.add_child(child);
             }
 
-            (key, value) => bail!("Unexpected value: `{name}.{key} = {value}`"),
+            _ => bail!("Unexpected value: `{key:?}: {value:?}`"),
         }
     }
 
