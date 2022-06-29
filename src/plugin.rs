@@ -4,6 +4,7 @@ use anyhow::Result;
 use async_std::fs;
 use async_std::os::unix;
 use async_std::process::Command;
+use async_std::process::Stdio;
 use std::env;
 use std::iter;
 use std::path::Path;
@@ -56,7 +57,7 @@ impl Plugin {
         fs::metadata(&self.repository_path).await.is_ok()
     }
 
-    pub async fn update(&self) -> Result<String> {
+    pub async fn update(&self) -> Result<(&str, String)> {
         if let Location::Url(url) = &self.location {
             if self.repository_path_exists().await {
                 self.pull().await?;
@@ -66,7 +67,7 @@ impl Plugin {
         }
 
         self.symlink().await?;
-        Ok(self.config())
+        Ok((&self.name, self.config()))
     }
 
     async fn symlink(&self) -> Result<()> {
@@ -76,18 +77,19 @@ impl Plugin {
                 .with_context(|| format!("Couldn't activate the plugin {}", self.name))?;
         }
 
-        println!("Plugin {} updated.", self.name);
+        // println!("Plugin {} updated.", self.name);
         Ok(())
     }
 
     async fn clone_repo(&self, url: &Url) -> Result<()> {
         let location = format!("{}.git", url);
-        println!("Cloning {}.", self.name);
 
         let status = Command::new("git")
             .arg("clone")
             .arg(location)
             .arg(&self.repository_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()
             .await?;
 
@@ -101,10 +103,11 @@ impl Plugin {
     }
 
     async fn pull(&self) -> Result<()> {
-        println!("Pulling from {}.", self.name);
         let status = Command::new("git")
             .arg("pull")
             .current_dir(&self.repository_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()
             .await?;
 

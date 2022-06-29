@@ -8,6 +8,7 @@ use async_std::io::WriteExt;
 use async_std::task;
 use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
+use kdam::tqdm;
 use std::fs;
 use std::path::Path;
 use yaml_rust::yaml::Hash;
@@ -44,18 +45,24 @@ fn main() -> Result<()> {
             .map(Plugin::update)
             .collect();
 
+        let mut progress = tqdm!(total = updates.len());
+
         while let Some(result) = updates.next().await {
             match result {
-                Ok(config) => kak
-                    .write_all(config.as_bytes())
-                    .await
-                    .context("Couldn't write kak file")?,
+                Ok((name, config)) => {
+                    kak.write_all(config.as_bytes())
+                        .await
+                        .context("Couldn't write kak file")?;
+                    progress.write(format!("  {name} updated"))
+                }
 
                 Err(error) => {
-                    println!("{}", error);
+                    eprintln!("{}", error);
                     got_error = true;
                 }
             }
+
+            progress.update(1);
         }
 
         // Close top level block
