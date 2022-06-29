@@ -8,7 +8,11 @@ use async_std::io::WriteExt;
 use async_std::task;
 use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
+use kdam::term::Colorizer;
 use kdam::tqdm;
+use kdam::Animation;
+use kdam::Column;
+use kdam::RichProgress;
 use std::fs;
 use std::path::Path;
 use yaml_rust::yaml::Hash;
@@ -27,8 +31,7 @@ fn main() -> Result<()> {
         parse(&balaio, &xdg).context(format!("Couldn't parse {}", balaio.to_str().unwrap()))?;
 
     create_dirs(&xdg)?;
-
-    let mut got_error = false;
+    let mut errors = Vec::new();
 
     task::block_on(async {
         let mut kak = File::create(xdg.autoload.join("balaio.kak"))
@@ -45,7 +48,10 @@ fn main() -> Result<()> {
             .map(Plugin::update)
             .collect();
 
-        let mut progress = tqdm!(total = updates.len());
+        let mut progress = RichProgress::new(
+            tqdm!(total = updates.len()),
+            vec![Column::Text("Updating".into(), None), Column::Bar],
+        );
 
         while let Some(result) = updates.next().await {
             match result {
@@ -53,12 +59,17 @@ fn main() -> Result<()> {
                     kak.write_all(config.as_bytes())
                         .await
                         .context("Couldn't write kak file")?;
-                    progress.write(format!("  {name} updated"))
+                    progress.write(format!("  {} {name}", "Updated".colorize("green")))
                 }
 
                 Err(error) => {
-                    eprintln!("{}", error);
-                    got_error = true;
+                    progress.write(format!(
+                        "   {} {}",
+                        "Failed".colorize("red"),
+                        error.plugin()
+                    ));
+
+                    errors.push(format!("{error}"));
                 }
             }
 
@@ -69,11 +80,16 @@ fn main() -> Result<()> {
         kak.write_all("🧺".as_bytes())
             .await
             .context("Couldn't write kak file")?;
+        progress.clear();
         Ok::<(), Error>(())
     })?;
 
-    if got_error {
-        Err(anyhow!("Some plugins could not be updated"))
+    if !errors.is_empty() {
+        eprintln!();
+        Err(anyhow!(
+            "some plugins could not be updated:\n  {}",
+            errors.join("\n  ")
+        ))
     } else {
         Ok(())
     }

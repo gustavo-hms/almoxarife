@@ -1,6 +1,4 @@
 use anyhow::anyhow;
-use anyhow::Context;
-use anyhow::Result;
 use async_std::fs;
 use async_std::os::unix;
 use async_std::process::Command;
@@ -9,7 +7,28 @@ use std::env;
 use std::iter;
 use std::path::Path;
 use std::path::PathBuf;
+use thiserror::Error;
 use url::Url;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Could not clone {0}: {1}")]
+    Clone(String, String),
+    #[error("Could not update {0}: {1}")]
+    Pull(String, String),
+    #[error("Could not activate {0}: {1}")]
+    Link(String, String),
+}
+
+impl Error {
+    pub fn plugin(&self) -> &str {
+        match self {
+            Error::Clone(name, _) => name,
+            Error::Pull(name, _) => name,
+            Error::Link(name, _) => name,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Location {
@@ -57,7 +76,7 @@ impl Plugin {
         fs::metadata(&self.repository_path).await.is_ok()
     }
 
-    pub async fn update(&self) -> Result<(&str, String)> {
+    pub async fn update(&self) -> Result<(&str, String), Error> {
         if let Location::Url(url) = &self.location {
             if self.repository_path_exists().await {
                 self.pull().await?;
@@ -70,18 +89,17 @@ impl Plugin {
         Ok((&self.name, self.config()))
     }
 
-    async fn symlink(&self) -> Result<()> {
+    async fn symlink(&self) -> Result<(), Error> {
         if !self.disabled {
             unix::fs::symlink(&self.repository_path, &self.link_path)
                 .await
-                .with_context(|| format!("Couldn't activate the plugin {}", self.name))?;
+                .map_err(|e| Error::Link(self.name.clone(), e.to_string()))?;
         }
 
-        // println!("Plugin {} updated.", self.name);
         Ok(())
     }
 
-    async fn clone_repo(&self, url: &Url) -> Result<()> {
+    async fn clone_repo(&self, url: &Url) -> Result<(), Error> {
         let location = format!("{}.git", url);
 
         let status = Command::new("git")
@@ -91,31 +109,33 @@ impl Plugin {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .await?;
+            .await
+            .map_err(|e| Error::Clone(self.name.clone(), e.to_string()))?;
 
         match status.code() {
             None | Some(0) => Ok(()),
-            Some(code) => Err(anyhow!(
-                "Git exited with status {code} while cloning {}",
-                self.name
+            Some(code) => Err(Error::Clone(
+                self.name.clone(),
+                format!("git exited with status {}", code),
             )),
         }
     }
 
-    async fn pull(&self) -> Result<()> {
+    async fn pull(&self) -> Result<(), Error> {
         let status = Command::new("git")
             .arg("pull")
             .current_dir(&self.repository_path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .await?;
+            .await
+            .map_err(|e| Error::Pull(self.name.clone(), e.to_string()))?;
 
         match status.code() {
             None | Some(0) => Ok(()),
-            Some(code) => Err(anyhow!(
-                "Git exited with status {code} while pulling from {}",
-                self.name
+            Some(code) => Err(Error::Pull(
+                self.name.clone(),
+                format!("git exited with status {}", code),
             )),
         }
     }
@@ -160,7 +180,7 @@ impl PluginBuilder {
         self
     }
 
-    pub fn build(mut self) -> Result<Plugin> {
+    pub fn build(mut self) -> anyhow::Result<Plugin> {
         let location = self
             .location
             .ok_or_else(|| anyhow!("Missing `location` field for plugin {}", self.name))?;
