@@ -30,6 +30,12 @@ impl Error {
     }
 }
 
+pub enum Status<'a> {
+    Installed { name: &'a str, config: String },
+    Updated { name: &'a str, config: String },
+    NoChange { name: &'a str, config: String },
+}
+
 #[derive(Debug)]
 pub enum Location {
     Url(Url),
@@ -76,17 +82,32 @@ impl Plugin {
         fs::metadata(&self.repository_path).await.is_ok()
     }
 
-    pub async fn update(&self) -> Result<(&str, String), Error> {
-        if let Location::Url(url) = &self.location {
-            if self.repository_path_exists().await {
+    pub async fn update(&self) -> Result<Status<'_>, Error> {
+        let status = match (&self.location, self.repository_path_exists().await) {
+            (Location::Url(_), true) => {
                 self.pull().await?;
-            } else {
-                self.clone_repo(url).await?;
+                Status::Updated {
+                    name: &self.name,
+                    config: self.config(),
+                }
             }
-        }
+
+            (Location::Url(url), false) => {
+                self.clone_repo(url).await?;
+                Status::Installed {
+                    name: &self.name,
+                    config: self.config(),
+                }
+            }
+
+            _ => Status::NoChange {
+                name: &self.name,
+                config: self.config(),
+            },
+        };
 
         self.symlink().await?;
-        Ok((&self.name, self.config()))
+        Ok(status)
     }
 
     async fn symlink(&self) -> Result<(), Error> {

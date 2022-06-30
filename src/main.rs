@@ -10,9 +10,9 @@ use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
 use kdam::term::Colorizer;
 use kdam::tqdm;
-use kdam::Animation;
 use kdam::Column;
 use kdam::RichProgress;
+use plugin::Status;
 use std::fs;
 use std::path::Path;
 use yaml_rust::yaml::Hash;
@@ -55,18 +55,32 @@ fn main() -> Result<()> {
 
         while let Some(result) = updates.next().await {
             match result {
-                Ok((name, config)) => {
+                Ok(Status::Installed { name, config }) => {
                     kak.write_all(config.as_bytes())
                         .await
                         .context("Couldn't write kak file")?;
-                    progress.write(format!("  {} {name}", "Updated".colorize("green")))
+                    progress.write(format!("{name:>20} {}", "installed".colorize("green")))
+                }
+
+                Ok(Status::Updated { name, config }) => {
+                    kak.write_all(config.as_bytes())
+                        .await
+                        .context("Couldn't write kak file")?;
+                    progress.write(format!("{name:>20} {}", "updated".colorize("green")))
+                }
+
+                Ok(Status::NoChange { name, config }) => {
+                    kak.write_all(config.as_bytes())
+                        .await
+                        .context("Couldn't write kak file")?;
+                    progress.write(format!("{name:>20} {}", "unchanged".colorize("blue")))
                 }
 
                 Err(error) => {
                     progress.write(format!(
-                        "   {} {}",
-                        "Failed".colorize("red"),
-                        error.plugin()
+                        "{:>20} {}",
+                        error.plugin(),
+                        "failed".colorize("red")
                     ));
 
                     errors.push(format!("{error}"));
