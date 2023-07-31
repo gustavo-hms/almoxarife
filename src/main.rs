@@ -19,6 +19,7 @@ use yaml_rust::yaml::Hash;
 use yaml_rust::yaml::Yaml;
 use yaml_rust::yaml::YamlLoader;
 
+mod config;
 mod plugin;
 
 use plugin::Plugin;
