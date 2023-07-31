@@ -1,14 +1,17 @@
+use anyhow::Context;
+use anyhow::Result;
 use std::env;
+use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::fs;
 use std::os::unix;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 use std::thread;
 use std::time::Duration;
-
-use anyhow::Result;
-use std::path::Path;
-use std::path::PathBuf;
 
 pub struct Config {
     /// The directory where plugins' repos will be checked out (usually `~/.local/share/balaio`).
@@ -26,7 +29,7 @@ impl Config {
         let home = env::var("HOME").expect("Could not read HOME environment variable");
         let home = Path::new(&home);
 
-        let dir = if let Ok(config) = env::var("XDG_CONFIG_HOME") {
+        let config_dir = if let Ok(config) = env::var("XDG_CONFIG_HOME") {
             PathBuf::from(&config)
         } else {
             home.join(".config")
@@ -38,12 +41,12 @@ impl Config {
             home.join(".local/share/balaio")
         };
 
-        let autoload_dir = dir.join("kak/autoload");
+        let autoload_dir = config_dir.join("kak/autoload");
         let mut autoload_plugins_dir = autoload_dir.clone();
         autoload_plugins_dir.push("balaio");
 
         Config {
-            dir,
+            dir: config_dir,
             autoload_dir,
             autoload_plugins_dir,
             balaio_data_dir,
@@ -51,7 +54,7 @@ impl Config {
     }
 
     pub fn create_dirs(&self) -> Result<()> {
-        if !self.autoload_dir.metadata().is_ok() {
+        if self.autoload_dir.metadata().is_err() {
             fs::create_dir_all(&self.autoload_dir)?;
 
             self.link_runtime_dir()
@@ -64,8 +67,8 @@ impl Config {
 
         fs::create_dir_all(&self.autoload_plugins_dir)?;
 
-        if self.data_dir.metadata().is_err() {
-            fs::create_dir_all(&self.data_dir)?;
+        if self.balaio_data_dir.metadata().is_err() {
+            fs::create_dir_all(&self.balaio_data_dir)?;
         }
 
         Ok(())
@@ -84,9 +87,11 @@ impl Config {
             .args(["-s", "TERM", &kakoune.id().to_string()])
             .spawn()?;
 
-        kill.wait();
+        kill.wait()?;
 
-        let runtime_dir = kakoune.wait_with_output().unwrap();
-        unix::fs::symlink(&runtime_dir, &self.autoload_dir)
+        let runtime_dir = kakoune.wait_with_output()?;
+        let runtime_dir = OsStr::from_bytes(&runtime_dir.stdout);
+        unix::fs::symlink(runtime_dir, &self.autoload_dir)?;
+        Ok(())
     }
 }
