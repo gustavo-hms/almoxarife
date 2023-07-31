@@ -6,6 +6,7 @@ use anyhow::Result;
 use async_std::fs::File;
 use async_std::io::WriteExt;
 use async_std::task;
+use config::Config;
 use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
 use kdam::term::Colorizer;
@@ -23,81 +24,64 @@ mod config;
 mod plugin;
 
 use plugin::Plugin;
-use plugin::Xdg;
 
 fn main() -> Result<()> {
-    let xdg = Xdg::new();
-    let balaio = xdg.config.join("balaio.yaml");
-    let plugins =
-        parse(&balaio, &xdg).context(format!("Couldn't parse {}", balaio.to_str().unwrap()))?;
+    let config = Config::new();
+    let plugins = parse(&config.file, &config)
+        .context(format!("Couldn't parse {}", config.file.to_str().unwrap()))?;
+    config.create_dirs()?;
 
-    create_dirs(&xdg)?;
+    task::block_on(async { manage_plugins(&plugins, &config).await })
+}
+
+async fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
+    let mut kak = config.create_kak_file_with_prelude().await?;
     let mut errors = Vec::new();
 
-    task::block_on(async {
-        let mut kak = File::create(xdg.autoload.join("balaio.kak"))
-            .await
-            .context("Couldn't create kak file")?;
+    let mut updates: FuturesUnordered<_> = plugins
+        .iter()
+        .flat_map(Plugin::iter)
+        .map(Plugin::update)
+        .collect();
 
-        kak.write_all(CONFIG_PRELUDE.as_bytes())
-            .await
-            .context("Couldn't write kak file")?;
+    let mut progress = RichProgress::new(
+        tqdm!(total = updates.len()),
+        vec![Column::Text("Updating".into(), None), Column::Bar],
+    );
 
-        let mut updates: FuturesUnordered<_> = plugins
-            .iter()
-            .flat_map(Plugin::iter)
-            .map(Plugin::update)
-            .collect();
-
-        let mut progress = RichProgress::new(
-            tqdm!(total = updates.len()),
-            vec![Column::Text("Updating".into(), None), Column::Bar],
-        );
-
-        while let Some(result) = updates.next().await {
-            match result {
-                Ok(Status::Installed { name, config }) => {
-                    kak.write_all(config.as_bytes())
-                        .await
-                        .context("Couldn't write kak file")?;
-                    progress.write(format!("{name:>20} {}", "installed".colorize("green")))
-                }
-
-                Ok(Status::Updated { name, config }) => {
-                    kak.write_all(config.as_bytes())
-                        .await
-                        .context("Couldn't write kak file")?;
-                    progress.write(format!("{name:>20} {}", "updated".colorize("green")))
-                }
-
-                Ok(Status::NoChange { name, config }) => {
-                    kak.write_all(config.as_bytes())
-                        .await
-                        .context("Couldn't write kak file")?;
-                    progress.write(format!("{name:>20} {}", "unchanged".colorize("blue")))
-                }
-
-                Err(error) => {
-                    progress.write(format!(
-                        "{:>20} {}",
-                        error.plugin(),
-                        "failed".colorize("red")
-                    ));
-
-                    errors.push(format!("{error}"));
-                }
+    while let Some(result) = updates.next().await {
+        match result {
+            Ok(Status::Installed { name, config }) => {
+                Config::write_to_kak(&mut kak, config.as_bytes()).await?;
+                progress.write(format!("{name:>20} {}", "installed".colorize("green")))
             }
 
-            progress.update(1);
+            Ok(Status::Updated { name, config }) => {
+                Config::write_to_kak(&mut kak, config.as_bytes()).await?;
+                progress.write(format!("{name:>20} {}", "updated".colorize("green")))
+            }
+
+            Ok(Status::NoChange { name, config }) => {
+                Config::write_to_kak(&mut kak, config.as_bytes()).await?;
+                progress.write(format!("{name:>20} {}", "unchanged".colorize("blue")))
+            }
+
+            Err(error) => {
+                progress.write(format!(
+                    "{:>20} {}",
+                    error.plugin(),
+                    "failed".colorize("red")
+                ));
+
+                errors.push(format!("{error}"));
+            }
         }
 
-        // Close top level block
-        kak.write_all("🧺".as_bytes())
-            .await
-            .context("Couldn't write kak file")?;
-        progress.clear();
-        Ok::<(), Error>(())
-    })?;
+        progress.update(1);
+    }
+
+    Config::close_kak_file(kak).await?;
+    progress.clear();
 
     if !errors.is_empty() {
         eprintln!();
@@ -110,20 +94,7 @@ fn main() -> Result<()> {
     }
 }
 
-const CONFIG_PRELUDE: &str = r#"
-hook global KakBegin .* %🧺
-
-add-highlighter shared/balaio regions
-add-highlighter shared/balaio/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
-add-highlighter shared/balaio/ region '^\s*config:[^\n]' '\n' ref kakrc
-
-hook -group balaio global WinCreate .*balaio[.]yaml %{
-    add-highlighter window/balaio ref balaio
-    hook -once -always window WinClose .* %{ remove-highlighter window/balaio }
-}
-"#;
-
-fn parse<P: AsRef<Path>>(file: P, xdg: &Xdg) -> Result<Vec<Plugin>> {
+fn parse<P: AsRef<Path>>(file: P, config: &Config) -> Result<Vec<Plugin>> {
     let yaml = fs::read_to_string(file)?;
     let doc = YamlLoader::load_from_str(&yaml)?;
 
@@ -137,7 +108,7 @@ fn parse<P: AsRef<Path>>(file: P, xdg: &Xdg) -> Result<Vec<Plugin>> {
         Yaml::Hash(hash) => {
             for element in hash.iter() {
                 if let (Yaml::String(key), Yaml::Hash(hash)) = element {
-                    plugins.push(build_plugin(key, hash, xdg)?);
+                    plugins.push(build_plugin(key, hash, config)?);
                 } else {
                     bail!("Unexpected field {element:?}")
                 }
@@ -150,8 +121,8 @@ fn parse<P: AsRef<Path>>(file: P, xdg: &Xdg) -> Result<Vec<Plugin>> {
     Ok(plugins)
 }
 
-fn build_plugin(name: &str, hash: &Hash, xdg: &Xdg) -> Result<Plugin> {
-    let mut builder = Plugin::builder(name, xdg);
+fn build_plugin(name: &str, hash: &Hash, config: &Config) -> Result<Plugin> {
+    let mut builder = Plugin::builder(name, config);
 
     for (key, value) in hash.iter() {
         match (key.as_str(), value) {
@@ -180,7 +151,7 @@ fn build_plugin(name: &str, hash: &Hash, xdg: &Xdg) -> Result<Plugin> {
             }
 
             (Some(key), Yaml::Hash(hash)) => {
-                let child = build_plugin(key, hash, xdg)?;
+                let child = build_plugin(key, hash, config)?;
                 builder = builder.add_child(child);
             }
 
@@ -189,18 +160,4 @@ fn build_plugin(name: &str, hash: &Hash, xdg: &Xdg) -> Result<Plugin> {
     }
 
     builder.build()
-}
-
-fn create_dirs(xdg: &Xdg) -> Result<()> {
-    if xdg.autoload.metadata().is_ok() {
-        fs::remove_dir_all(&xdg.autoload)?;
-    }
-
-    fs::create_dir_all(&xdg.autoload)?;
-
-    if xdg.data.metadata().is_err() {
-        fs::create_dir_all(&xdg.data)?;
-    }
-
-    Ok(())
 }
