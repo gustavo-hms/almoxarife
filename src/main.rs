@@ -1,10 +1,7 @@
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
-use anyhow::Error;
 use anyhow::Result;
-use async_std::fs::File;
-use async_std::io::WriteExt;
 use async_std::task;
 use config::Config;
 use futures::stream::FuturesUnordered;
