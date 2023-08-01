@@ -32,12 +32,12 @@ pub struct Config {
     pub balaio_data_dir: PathBuf,
     /// The path to `balaio.yaml`.
     pub file: PathBuf,
-    // Directory of `XDG_CONFIG_HOME`
+    // The Balaio subdectory inside `autoload`.
+    pub autoload_plugins_dir: PathBuf,
+    // Path of `XDG_CONFIG_HOME`
     dir: PathBuf,
     // The Kakoune's autoload directory.
     autoload_dir: PathBuf,
-    // The Balaio subdectory inside `autoload`.
-    autoload_plugins_dir: PathBuf,
 }
 
 impl Config {
@@ -107,9 +107,11 @@ impl Config {
 
         kill.wait()?;
 
-        let runtime_dir = kakoune.wait_with_output()?;
-        let runtime_dir = OsStr::from_bytes(&runtime_dir.stdout);
-        unix::fs::symlink(runtime_dir, &self.autoload_dir)?;
+        let output = kakoune.wait_with_output()?;
+        let runtime_dir = OsStr::from_bytes(&output.stdout);
+        let mut runtime_dir = PathBuf::from(runtime_dir);
+        runtime_dir.push("rc");
+        unix::fs::symlink(&runtime_dir, &self.autoload_dir)?;
         Ok(())
     }
 
@@ -124,7 +126,7 @@ impl Config {
 
         kak.write_all(CONFIG_PRELUDE.as_bytes())
             .await
-            .context("Couldn't write balaio.kak file");
+            .context("Couldn't write balaio.kak file")?;
 
         Ok(kak)
     }

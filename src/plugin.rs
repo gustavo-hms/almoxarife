@@ -3,12 +3,12 @@ use async_std::fs;
 use async_std::os::unix;
 use async_std::process::Command;
 use async_std::process::Stdio;
-use std::env;
 use std::iter;
-use std::path::Path;
 use std::path::PathBuf;
 use thiserror::Error;
 use url::Url;
+
+use crate::config::Config;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -54,9 +54,9 @@ pub struct Plugin {
 }
 
 impl Plugin {
-    pub fn builder(name: &str, xdg: &Xdg) -> PluginBuilder {
-        let repository_path = xdg.data.join(name);
-        let link_path = xdg.autoload.join(name);
+    pub fn builder(name: &str, config: &Config) -> PluginBuilder {
+        let repository_path = config.balaio_data_dir.join(name);
+        let link_path = config.autoload_plugins_dir.join(name);
 
         PluginBuilder {
             name: name.to_string(),
@@ -219,39 +219,6 @@ impl PluginBuilder {
             children: self.children,
             location,
         })
-    }
-}
-
-pub struct Xdg {
-    pub config: PathBuf,
-    pub autoload: PathBuf,
-    pub data: PathBuf,
-}
-
-impl Xdg {
-    pub fn new() -> Xdg {
-        let home = env::var("HOME").expect("Could not read HOME environment variable");
-        let home = Path::new(&home);
-
-        let config = if let Ok(config) = env::var("XDG_CONFIG_HOME") {
-            PathBuf::from(&config)
-        } else {
-            home.join(".config")
-        };
-
-        let data = if let Ok(data) = env::var("XDG_DATA_HOME") {
-            PathBuf::from(&data).join("balaio")
-        } else {
-            home.join(".local/share/balaio")
-        };
-
-        let autoload = config.join("kak/autoload/balaio");
-
-        Xdg {
-            config,
-            autoload,
-            data,
-        }
     }
 }
 
