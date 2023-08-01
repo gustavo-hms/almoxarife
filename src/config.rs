@@ -115,29 +115,35 @@ impl Config {
         Ok(())
     }
 
-    async fn balaio_config(&self) -> Result<File> {
-        File::create(&self.file)
+    async fn balaio_config(&self) -> Result<Kak> {
+        let file = File::create(&self.file)
             .await
-            .context("Couldn't create balaio.kak file")
+            .context("Couldn't create balaio.kak file")?;
+
+        Ok(Kak(file))
     }
 
-    pub async fn create_kak_file_with_prelude(&self) -> Result<File> {
+    pub async fn create_kak_file_with_prelude(&self) -> Result<Kak> {
         let mut kak = self.balaio_config().await?;
-
-        kak.write_all(CONFIG_PRELUDE.as_bytes())
-            .await
-            .context("Couldn't write balaio.kak file")?;
-
+        kak.write(CONFIG_PRELUDE.as_bytes()).await?;
         Ok(kak)
     }
+}
 
-    pub async fn close_kak_file(mut kak: File) -> Result<()> {
-        kak.write_all("🧺".as_bytes())
+pub struct Kak(File);
+
+impl Kak {
+    pub async fn write(&mut self, data: &[u8]) -> Result<()> {
+        self.0
+            .write_all(data)
             .await
             .context("Couldn't write kak file")
     }
 
-    pub async fn write_to_kak(kak: &mut File, data: &[u8]) -> Result<()> {
-        kak.write_all(data).await.context("Couldn't write kak file")
+    pub async fn close(mut self) -> Result<()> {
+        self.0
+            .write_all("🧺".as_bytes())
+            .await
+            .context("Couldn't write kak file")
     }
 }

@@ -52,35 +52,31 @@ async fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
     while let Some(result) = updates.next().await {
         match result {
             Ok(Status::Installed { name, config }) => {
-                Config::write_to_kak(&mut kak, config.as_bytes()).await?;
+                kak.write(config.as_bytes()).await?;
                 progress.write(format!("{name:>20} {}", "installed".colorize("green")))
             }
 
             Ok(Status::Updated { name, config }) => {
-                Config::write_to_kak(&mut kak, config.as_bytes()).await?;
+                kak.write(config.as_bytes()).await?;
                 progress.write(format!("{name:>20} {}", "updated".colorize("green")))
             }
 
             Ok(Status::NoChange { name, config }) => {
-                Config::write_to_kak(&mut kak, config.as_bytes()).await?;
+                kak.write(config.as_bytes()).await?;
                 progress.write(format!("{name:>20} {}", "unchanged".colorize("blue")))
             }
 
             Err(error) => {
-                progress.write(format!(
-                    "{:>20} {}",
-                    error.plugin(),
-                    "failed".colorize("red")
-                ));
-
-                errors.push(format!("{error}"));
+                let message = format!("{:>20} {}", error.plugin(), "failed".colorize("red"));
+                progress.write(message);
+                errors.push(error.to_string());
             }
         }
 
         progress.update(1);
     }
 
-    Config::close_kak_file(kak).await?;
+    kak.close().await?;
     progress.clear();
 
     if !errors.is_empty() {
