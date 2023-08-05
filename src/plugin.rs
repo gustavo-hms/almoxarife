@@ -33,7 +33,7 @@ impl Error {
 pub enum Status<'a> {
     Installed { name: &'a str, config: String },
     Updated { name: &'a str, config: String },
-    NoChange { name: &'a str, config: String },
+    Local { name: &'a str, config: String },
 }
 
 #[derive(Debug)]
@@ -100,7 +100,7 @@ impl Plugin {
                 }
             }
 
-            _ => Status::NoChange {
+            _ => Status::Local {
                 name: &self.name,
                 config: self.config(),
             },
