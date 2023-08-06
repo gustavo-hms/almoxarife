@@ -188,10 +188,9 @@ impl Config {
 
         let output = kakoune.wait_with_output()?;
         let runtime_dir = OsStr::from_bytes(&output.stdout);
-        let mut runtime_dir = PathBuf::from(runtime_dir);
-        runtime_dir.push("rc");
-        dbg!(&runtime_dir);
-        unix::fs::symlink(&runtime_dir, &self.autoload_dir)?;
+        let runtime_dir = PathBuf::from(runtime_dir).join("rc");
+        unix::fs::symlink(runtime_dir, self.autoload_dir.join("rc"))?;
+
         Ok(())
     }
 
