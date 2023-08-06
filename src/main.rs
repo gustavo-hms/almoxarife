@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     let config = Config::new();
     let plugins = config
         .parse()
-        .context(format!("Couldn't parse {}", config.file.to_str().unwrap()))?;
+        .context(format!("couldn't parse {}", config.file.to_str().unwrap()))?;
     config.create_dirs()?;
 
     task::block_on(async { manage_plugins(&plugins, &config).await })

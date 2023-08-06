@@ -50,7 +50,7 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Config {
-        let home = env::var("HOME").expect("Could not read HOME environment variable");
+        let home = env::var("HOME").expect("could not read HOME environment variable");
         let home = Path::new(&home);
 
         let config_dir = if let Ok(config) = env::var("XDG_CONFIG_HOME") {
@@ -87,7 +87,7 @@ impl Config {
         let doc = YamlLoader::load_from_str(&yaml)?;
 
         if doc.is_empty() {
-            bail!("Configuration file has no YAML element");
+            bail!("configuration file has no YAML element");
         }
 
         let mut plugins = Vec::new();
@@ -98,12 +98,12 @@ impl Config {
                     if let (Yaml::String(key), Yaml::Hash(hash)) = element {
                         plugins.push(self.build_plugin(key, hash)?);
                     } else {
-                        bail!("Unexpected field {element:?}")
+                        bail!("unexpected field {element:?}")
                     }
                 }
             }
 
-            _ => bail!("Couldn't parse configuration file"),
+            _ => bail!("couldn't parse configuration file"),
         }
 
         Ok(plugins)
@@ -119,7 +119,7 @@ impl Config {
                 }
 
                 (Some("location"), _) => {
-                    bail!("Expecting a string for the `location` field of plugin {name}")
+                    bail!("expecting a string for the `location` field of plugin {name}")
                 }
 
                 (Some("disabled"), Yaml::Boolean(disabled)) => {
@@ -127,7 +127,7 @@ impl Config {
                 }
 
                 (Some("disabled"), _) => {
-                    bail!("Expecting a boolean for the `disabled` field of plugin {name}")
+                    bail!("expecting a boolean for the `disabled` field of plugin {name}")
                 }
 
                 (Some("config"), Yaml::String(config)) => {
@@ -135,7 +135,7 @@ impl Config {
                 }
 
                 (Some("config"), _) => {
-                    bail!("Expecting a string for the `config` field of plugin {name}")
+                    bail!("expecting a string for the `config` field of plugin {name}")
                 }
 
                 (Some(key), Yaml::Hash(hash)) => {
@@ -143,7 +143,7 @@ impl Config {
                     builder = builder.add_child(child);
                 }
 
-                _ => bail!("Unexpected value: `{key:?}: {value:?}`"),
+                _ => bail!("unexpected value: `{key:?}: {value:?}`"),
             }
         }
 
@@ -155,7 +155,7 @@ impl Config {
             fs::create_dir_all(&self.autoload_dir)?;
 
             self.link_runtime_dir()
-                .context("Unable to detect Kakoune's runtime directory")?;
+                .context("unable to detect Kakoune's runtime directory")?;
         }
 
         if self.autoload_plugins_dir.metadata().is_ok() {
@@ -190,6 +190,7 @@ impl Config {
         let runtime_dir = OsStr::from_bytes(&output.stdout);
         let mut runtime_dir = PathBuf::from(runtime_dir);
         runtime_dir.push("rc");
+        dbg!(&runtime_dir);
         unix::fs::symlink(&runtime_dir, &self.autoload_dir)?;
         Ok(())
     }
@@ -216,13 +217,13 @@ impl Kak {
         self.0
             .write_all(data)
             .await
-            .context("Couldn't write kak file")
+            .context("couldn't write kak file")
     }
 
     pub async fn close(mut self) -> Result<()> {
         self.0
             .write_all("🧺".as_bytes())
             .await
-            .context("Couldn't write kak file")
+            .context("couldn't write kak file")
     }
 }
