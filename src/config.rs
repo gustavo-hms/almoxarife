@@ -40,8 +40,6 @@ pub struct Config {
     pub autoload_plugins_dir: PathBuf,
     /// The path to `balaio.yaml`.
     pub file: PathBuf,
-    // Path of `XDG_CONFIG_HOME`
-    dir: PathBuf,
     /// The path to `balaio.kak`
     balaio_kak_file: PathBuf,
     // The Kakoune's autoload directory.
@@ -73,7 +71,6 @@ impl Config {
         let balaio_kak_file = autoload_plugins_dir.join("balaio.kak");
 
         Config {
-            dir: config_dir,
             file,
             balaio_kak_file,
             autoload_dir,
