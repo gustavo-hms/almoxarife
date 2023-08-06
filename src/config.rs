@@ -36,12 +36,14 @@ hook -group balaio global WinCreate .*balaio[.]yaml %{
 pub struct Config {
     /// The directory where plugins' repos will be checked out (usually `~/.local/share/balaio`).
     pub balaio_data_dir: PathBuf,
-    /// The path to `balaio.yaml`.
-    pub file: PathBuf,
     // The Balaio subdectory inside `autoload`.
     pub autoload_plugins_dir: PathBuf,
+    /// The path to `balaio.yaml`.
+    pub file: PathBuf,
     // Path of `XDG_CONFIG_HOME`
     dir: PathBuf,
+    /// The path to `balaio.kak`
+    balaio_kak_file: PathBuf,
     // The Kakoune's autoload directory.
     autoload_dir: PathBuf,
 }
@@ -57,6 +59,8 @@ impl Config {
             home.join(".config")
         };
 
+        let file = config_dir.join("balaio.yaml");
+
         let balaio_data_dir = if let Ok(data) = env::var("XDG_DATA_HOME") {
             PathBuf::from(&data).join("balaio")
         } else {
@@ -66,11 +70,12 @@ impl Config {
         let autoload_dir = config_dir.join("kak/autoload");
         let mut autoload_plugins_dir = autoload_dir.clone();
         autoload_plugins_dir.push("balaio");
-        let file = autoload_plugins_dir.join("balaio.kak");
+        let balaio_kak_file = autoload_plugins_dir.join("balaio.kak");
 
         Config {
             dir: config_dir,
             file,
+            balaio_kak_file,
             autoload_dir,
             autoload_plugins_dir,
             balaio_data_dir,
@@ -189,16 +194,16 @@ impl Config {
         Ok(())
     }
 
-    async fn balaio_config(&self) -> Result<Kak> {
-        let file = File::create(&self.file)
+    async fn balaio_kak_file(&self) -> Result<Kak> {
+        let file = File::create(&self.balaio_kak_file)
             .await
-            .context("Couldn't create balaio.kak file")?;
+            .context("couldn't create balaio.kak file")?;
 
         Ok(Kak(file))
     }
 
     pub async fn create_kak_file_with_prelude(&self) -> Result<Kak> {
-        let mut kak = self.balaio_config().await?;
+        let mut kak = self.balaio_kak_file().await?;
         kak.write(CONFIG_PRELUDE.as_bytes()).await?;
         Ok(kak)
     }
