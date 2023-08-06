@@ -191,7 +191,7 @@ impl Config {
         Ok(())
     }
 
-    async fn balaio_kak_file(&self) -> Result<Kak> {
+    async fn create_kak_file(&self) -> Result<Kak> {
         let file = File::create(&self.balaio_kak_file)
             .await
             .context("couldn't create balaio.kak file")?;
@@ -200,7 +200,7 @@ impl Config {
     }
 
     pub async fn create_kak_file_with_prelude(&self) -> Result<Kak> {
-        let mut kak = self.balaio_kak_file().await?;
+        let mut kak = self.create_kak_file().await?;
         kak.write(CONFIG_PRELUDE.as_bytes()).await?;
         Ok(kak)
     }
