@@ -1,4 +1,7 @@
+use std::env;
 use std::fmt::Display;
+use std::process;
+use std::process::Command;
 
 use anyhow::anyhow;
 use anyhow::Context;
@@ -20,6 +23,21 @@ use plugin::Plugin;
 
 fn main() -> Result<()> {
     let config = Config::new();
+
+    if let Some(arg) = env::args().nth(1) {
+        if arg == "config" {
+            let status = Command::new("kak")
+                .arg(&config.file)
+                .status()
+                .context("couldn't run Kakoune")?;
+
+            match status.code() {
+                None | Some(0) => (),
+                Some(code) => process::exit(code),
+            }
+        }
+    }
+
     let plugins = config
         .parse()
         .context(format!("couldn't parse {}", config.file.to_str().unwrap()))?;
