@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -28,7 +30,6 @@ fn main() -> Result<()> {
 
 async fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
     let mut kak = config.create_kak_file_with_prelude().await?;
-    let mut errors = Vec::new();
 
     let mut updates: FuturesUnordered<_> = plugins
         .iter()
@@ -41,6 +42,9 @@ async fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
         vec![Column::Text("Updating".into(), None), Column::Bar],
     );
 
+    let mut errors = Vec::new();
+    let mut changes = Vec::new();
+
     while let Some(result) = updates.next().await {
         match result {
             Ok(Status::Installed { name, config }) => {
@@ -48,14 +52,27 @@ async fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
                 progress.write(format!("{name:>20} {}", "installed".colorize("green")))
             }
 
-            Ok(Status::Updated { name, config }) => {
+            Ok(Status::Unchanged { name, config }) => {
                 kak.write(config.as_bytes()).await?;
-                progress.write(format!("{name:>20} {}", "updated".colorize("green")))
+                progress.write(format!("{name:>20} {}", "unchanged".colorize("blue")))
+            }
+
+            Ok(Status::Updated { name, log, config }) => {
+                kak.write(config.as_bytes()).await?;
+                progress.write(format!("{name:>20} {}", "updated".colorize("green")));
+
+                changes.push(
+                    Change {
+                        plugin: name.to_string(),
+                        log,
+                    }
+                    .to_string(),
+                );
             }
 
             Ok(Status::Local { name, config }) => {
                 kak.write(config.as_bytes()).await?;
-                progress.write(format!("{name:>20} {}", "local".colorize("blue")))
+                progress.write(format!("{name:>20} {}", "local".colorize("yellow")))
             }
 
             Err(error) => {
@@ -71,6 +88,11 @@ async fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
     kak.close().await?;
     progress.clear();
 
+    if !changes.is_empty() {
+        println!("Updates\n-------\n");
+        println!("{}", changes.join("\n"));
+    }
+
     if !errors.is_empty() {
         eprintln!();
         Err(anyhow!(
@@ -79,5 +101,16 @@ async fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
         ))
     } else {
         Ok(())
+    }
+}
+
+struct Change {
+    plugin: String,
+    log: String,
+}
+
+impl Display for Change {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}:\n\n{}\n", self.plugin, self.log)
     }
 }

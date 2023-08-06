@@ -31,9 +31,23 @@ impl Error {
 }
 
 pub enum Status<'a> {
-    Installed { name: &'a str, config: String },
-    Updated { name: &'a str, config: String },
-    Local { name: &'a str, config: String },
+    Installed {
+        name: &'a str,
+        config: String,
+    },
+    Updated {
+        name: &'a str,
+        log: String,
+        config: String,
+    },
+    Unchanged {
+        name: &'a str,
+        config: String,
+    },
+    Local {
+        name: &'a str,
+        config: String,
+    },
 }
 
 #[derive(Debug)]
@@ -84,13 +98,18 @@ impl Plugin {
 
     pub async fn update(&self) -> Result<Status<'_>, Error> {
         let status = match (&self.location, self.repository_path_exists().await) {
-            (Location::Url(_), true) => {
-                self.pull().await?;
-                Status::Updated {
+            (Location::Url(_), true) => match self.pull().await? {
+                None => Status::Unchanged {
                     name: &self.name,
                     config: self.config(),
-                }
-            }
+                },
+
+                Some(log) => Status::Updated {
+                    name: &self.name,
+                    log,
+                    config: self.config(),
+                },
+            },
 
             (Location::Url(url), false) => {
                 self.clone_repo(url).await?;
@@ -142,7 +161,9 @@ impl Plugin {
         }
     }
 
-    async fn pull(&self) -> Result<(), Error> {
+    async fn pull(&self) -> Result<Option<String>, Error> {
+        let old_revision = self.current_revision().await;
+
         let status = Command::new("git")
             .arg("pull")
             .current_dir(&self.repository_path)
@@ -152,17 +173,52 @@ impl Plugin {
             .await
             .map_err(|e| Error::Pull(self.name.clone(), e.to_string()))?;
 
-        match status.code() {
-            None | Some(0) => Ok(()),
-            Some(code) => Err(Error::Pull(
-                self.name.clone(),
-                format!("git exited with status {}", code),
-            )),
+        if let Some(code) = status.code() {
+            if code != 0 {
+                return Err(Error::Pull(
+                    self.name.clone(),
+                    format!("git exited with status {}", code),
+                ));
+            }
         }
+
+        if let Some(old) = old_revision {
+            if let Some(new) = self.current_revision().await {
+                return Ok(self.log(old, new).await);
+            }
+        }
+
+        Ok(None)
     }
 
     pub fn config(&self) -> String {
         format!("try %[ require-module {} ]\n{}\n", self.name, self.config)
+    }
+
+    async fn current_revision(&self) -> Option<String> {
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .await
+            .ok()?;
+
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    async fn log(&self, old_revision: String, new_revision: String) -> Option<String> {
+        if old_revision == new_revision {
+            return None;
+        }
+
+        let range = format!("{old_revision}..{new_revision}");
+
+        let output = Command::new("git")
+            .args(["log", &range, "--oneline", "--no-decorate", "--reverse"])
+            .output()
+            .await
+            .ok()?;
+
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
     }
 }
 
