@@ -24,17 +24,15 @@ use plugin::Plugin;
 fn main() -> Result<()> {
     let config = Config::new();
 
-    if let Some(arg) = env::args().nth(1) {
-        if arg == "config" {
-            let status = Command::new("kak")
-                .arg(&config.file)
-                .status()
-                .context("couldn't run Kakoune")?;
+    if matches!(env::args().nth(1), Some(arg) if arg == "config") {
+        let status = Command::new("kak")
+            .arg(&config.file)
+            .status()
+            .context("couldn't run Kakoune")?;
 
-            match status.code() {
-                None | Some(0) => (),
-                Some(code) => process::exit(code),
-            }
+        match status.code() {
+            None | Some(0) => (),
+            Some(code) => process::exit(code),
         }
     }
 
