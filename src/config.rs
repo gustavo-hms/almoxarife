@@ -216,7 +216,7 @@ impl Kak {
             .context("couldn't write kak file")
     }
 
-    pub async fn close(mut self) -> Result<()> {
+    pub async fn close(&mut self) -> Result<()> {
         self.0
             .write_all("🧺".as_bytes())
             .await

@@ -1,5 +1,4 @@
 use std::env;
-use std::fmt::Display;
 use std::process;
 use std::process::Command;
 
