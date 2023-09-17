@@ -23,25 +23,25 @@ use crate::plugin::Plugin;
 const CONFIG_PRELUDE: &str = r#"
 hook global KakBegin .* %🧺
 
-add-highlighter shared/balaio regions
-add-highlighter shared/balaio/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
-add-highlighter shared/balaio/ region '^\s*config:[^\n]' '\n' ref kakrc
+add-highlighter shared/almoxarife regions
+add-highlighter shared/almoxarife/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
+add-highlighter shared/almoxarife/ region '^\s*config:[^\n]' '\n' ref kakrc
 
-hook -group balaio global WinCreate .*balaio[.]yaml %{
-    add-highlighter window/balaio ref balaio
-    hook -once -always window WinClose .* %{ remove-highlighter window/balaio }
+hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
+    add-highlighter window/almoxarife ref almoxarife
+    hook -once -always window WinClose .* %{ remove-highlighter window/almoxarife }
 }
 "#;
 
 pub struct Config {
-    /// The directory where plugins' repos will be checked out (usually `~/.local/share/balaio`).
-    pub balaio_data_dir: PathBuf,
+    /// The directory where plugins' repos will be checked out (usually `~/.local/share/almoxarife`).
+    pub almoxarife_data_dir: PathBuf,
     // The Balaio subdectory inside `autoload`.
     pub autoload_plugins_dir: PathBuf,
-    /// The path to `balaio.yaml`.
+    /// The path to `almoxarife.yaml`.
     pub file: PathBuf,
-    /// The path to `balaio.kak`
-    balaio_kak_file: PathBuf,
+    /// The path to `almoxarife.kak`
+    almoxarife_kak_file: PathBuf,
     // The Kakoune's autoload directory.
     autoload_dir: PathBuf,
 }
@@ -57,25 +57,25 @@ impl Config {
             home.join(".config")
         };
 
-        let file = config_dir.join("balaio.yaml");
+        let file = config_dir.join("almoxarife.yaml");
 
-        let balaio_data_dir = if let Ok(data) = env::var("XDG_DATA_HOME") {
-            PathBuf::from(&data).join("balaio")
+        let almoxarife_data_dir = if let Ok(data) = env::var("XDG_DATA_HOME") {
+            PathBuf::from(&data).join("almoxarife")
         } else {
-            home.join(".local/share/balaio")
+            home.join(".local/share/almoxarife")
         };
 
         let autoload_dir = config_dir.join("kak/autoload");
         let mut autoload_plugins_dir = autoload_dir.clone();
-        autoload_plugins_dir.push("balaio");
-        let balaio_kak_file = autoload_plugins_dir.join("balaio.kak");
+        autoload_plugins_dir.push("almoxarife");
+        let almoxarife_kak_file = autoload_plugins_dir.join("almoxarife.kak");
 
         Config {
             file,
-            balaio_kak_file,
+            almoxarife_kak_file,
             autoload_dir,
             autoload_plugins_dir,
-            balaio_data_dir,
+            almoxarife_data_dir,
         }
     }
 
@@ -161,8 +161,8 @@ impl Config {
 
         fs::create_dir_all(&self.autoload_plugins_dir)?;
 
-        if self.balaio_data_dir.metadata().is_err() {
-            fs::create_dir_all(&self.balaio_data_dir)?;
+        if self.almoxarife_data_dir.metadata().is_err() {
+            fs::create_dir_all(&self.almoxarife_data_dir)?;
         }
 
         Ok(())
@@ -170,7 +170,7 @@ impl Config {
 
     fn link_runtime_dir(&self) -> Result<()> {
         let kakoune = Command::new("kak")
-            .args(["-d", "-s", "balaio", "-E"])
+            .args(["-d", "-s", "almoxarife", "-E"])
             .arg("echo -to-file /dev/stdout %val[runtime]")
             .stdout(Stdio::piped())
             .spawn()?;
@@ -192,9 +192,9 @@ impl Config {
     }
 
     async fn create_kak_file(&self) -> Result<Kak> {
-        let file = File::create(&self.balaio_kak_file)
+        let file = File::create(&self.almoxarife_kak_file)
             .await
-            .context("couldn't create balaio.kak file")?;
+            .context("couldn't create almoxarife.kak file")?;
 
         Ok(Kak(file))
     }

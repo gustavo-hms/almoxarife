@@ -1,5 +1,5 @@
 [package]
-name = "balaio"
+name = "almoxarife"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,3 +14,7 @@ kdam = "0.1.7"
 
 [dev-dependencies]
 tempfile = "3.3"
+
+[[bin]]
+name = "al"
+path = "src/main.rs"

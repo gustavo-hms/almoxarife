@@ -69,7 +69,7 @@ pub struct Plugin {
 
 impl Plugin {
     pub fn builder(name: &str, config: &Config) -> PluginBuilder {
-        let repository_path = config.balaio_data_dir.join(name);
+        let repository_path = config.almoxarife_data_dir.join(name);
         let link_path = config.autoload_plugins_dir.join(name);
 
         PluginBuilder {
