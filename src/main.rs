@@ -75,14 +75,7 @@ async fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
             Ok(Status::Updated { name, log, config }) => {
                 kak.write(config.as_bytes()).await?;
                 progress.write(format!("{name:>20} {}", "updated".colorize("green")));
-
-                changes.push(
-                    Change {
-                        plugin: name.to_string(),
-                        log,
-                    }
-                    .to_string(),
-                );
+                changes.push(format!("{}:\n\n{}\n", name, log));
             }
 
             Ok(Status::Local { name, config }) => {
@@ -116,16 +109,5 @@ async fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
         ))
     } else {
         Ok(())
-    }
-}
-
-struct Change {
-    plugin: String,
-    log: String,
-}
-
-impl Display for Change {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}:\n\n{}\n", self.plugin, self.log)
     }
 }
