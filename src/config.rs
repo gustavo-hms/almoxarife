@@ -1,8 +1,8 @@
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use async_std::fs::File;
-use async_std::io::WriteExt;
+use smol::fs::File;
+use smol::io::AsyncWriteExt;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;

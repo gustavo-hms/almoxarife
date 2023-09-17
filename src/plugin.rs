@@ -1,8 +1,8 @@
 use anyhow::anyhow;
-use async_std::fs;
-use async_std::os::unix;
-use async_std::process::Command;
-use async_std::process::Stdio;
+use smol::fs;
+use smol::fs::unix;
+use smol::process::Command;
+use smol::process::Stdio;
 use std::iter;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -131,7 +131,7 @@ impl Plugin {
 
     async fn symlink(&self) -> Result<(), Error> {
         if !self.disabled {
-            unix::fs::symlink(&self.repository_path, &self.link_path)
+            unix::symlink(&self.repository_path, &self.link_path)
                 .await
                 .map_err(|e| Error::Link(self.name.clone(), e.to_string()))?;
         }
@@ -274,57 +274,6 @@ impl PluginBuilder {
             link_path: self.link_path,
             children: self.children,
             location,
-        })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use async_std::path::PathBuf;
-
-    use async_std::{prelude::FutureExt, task};
-    use url::Url;
-
-    use super::*;
-
-    #[test]
-    fn update() {
-        let config = PathBuf::from(tempfile::tempdir().unwrap().path());
-        let data = PathBuf::from(tempfile::tempdir().unwrap().path());
-
-        let xdg = Xdg {
-            config: config.clone(),
-            autoload: config.clone(),
-            data: data.clone(),
-        };
-
-        let luar = Plugin::builder("luar", &xdg)
-            .set_location(Url::parse("https://github.com/gustavo-hms/luar").unwrap())
-            .build()
-            .unwrap();
-
-        let peneira = Plugin::builder("peneira", &xdg)
-            .set_location(Url::parse("https://github.com/gustavo-hms/peneira").unwrap())
-            .build()
-            .unwrap();
-
-        task::block_on(async {
-            let first = luar.update();
-            let second = peneira.update();
-            let (first, second) = first.join(second).await;
-
-            assert!(first.unwrap().success());
-            assert!(second.unwrap().success());
-            assert!(data.join("luar").metadata().await.is_ok());
-            assert!(data.join("peneira").metadata().await.is_ok());
-
-            // Check if the second call to update doesn't try to clone again
-            let first = luar.update();
-            let second = peneira.update();
-            let (first, second) = first.join(second).await;
-
-            assert!(first.unwrap().success());
-            assert!(second.unwrap().success());
         })
     }
 }

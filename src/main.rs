@@ -6,7 +6,6 @@ use std::process::Command;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
-use async_std::task;
 use config::Config;
 use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
@@ -41,7 +40,7 @@ fn main() -> Result<()> {
         .context(format!("couldn't parse {}", config.file.to_str().unwrap()))?;
     config.create_dirs()?;
 
-    task::block_on(async { manage_plugins(&plugins, &config).await })
+    smol::block_on(async { manage_plugins(&plugins, &config).await })
 }
 
 async fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
