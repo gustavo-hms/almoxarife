@@ -1,10 +1,10 @@
 use anyhow::anyhow;
-use smol::fs;
-use smol::fs::unix;
-use smol::process::Command;
-use smol::process::Stdio;
+use std::fs;
 use std::iter;
+use std::os::unix;
 use std::path::PathBuf;
+use std::process::Command;
+use std::process::Stdio;
 use thiserror::Error;
 use url::Url;
 
@@ -92,13 +92,13 @@ impl Plugin {
         Box::new(iter::once(self).chain(children))
     }
 
-    async fn repository_path_exists(&self) -> bool {
-        fs::metadata(&self.repository_path).await.is_ok()
+    fn repository_path_exists(&self) -> bool {
+        fs::metadata(&self.repository_path).is_ok()
     }
 
-    pub async fn update(&self) -> Result<Status<'_>, Error> {
-        let status = match (&self.location, self.repository_path_exists().await) {
-            (Location::Url(_), true) => match self.pull().await? {
+    pub fn update(&self) -> Result<Status<'_>, Error> {
+        let status = match (&self.location, self.repository_path_exists()) {
+            (Location::Url(_), true) => match self.pull()? {
                 None => Status::Unchanged {
                     name: &self.name,
                     config: self.config(),
@@ -112,7 +112,7 @@ impl Plugin {
             },
 
             (Location::Url(url), false) => {
-                self.clone_repo(url).await?;
+                self.clone_repo(url)?;
                 Status::Installed {
                     name: &self.name,
                     config: self.config(),
@@ -125,21 +125,20 @@ impl Plugin {
             },
         };
 
-        self.symlink().await?;
+        self.symlink()?;
         Ok(status)
     }
 
-    async fn symlink(&self) -> Result<(), Error> {
+    fn symlink(&self) -> Result<(), Error> {
         if !self.disabled {
-            unix::symlink(&self.repository_path, &self.link_path)
-                .await
+            unix::fs::symlink(&self.repository_path, &self.link_path)
                 .map_err(|e| Error::Link(self.name.clone(), e.to_string()))?;
         }
 
         Ok(())
     }
 
-    async fn clone_repo(&self, url: &Url) -> Result<(), Error> {
+    fn clone_repo(&self, url: &Url) -> Result<(), Error> {
         let location = format!("{}.git", url);
 
         let status = Command::new("git")
@@ -149,7 +148,6 @@ impl Plugin {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .await
             .map_err(|e| Error::Clone(self.name.clone(), e.to_string()))?;
 
         match status.code() {
@@ -161,8 +159,8 @@ impl Plugin {
         }
     }
 
-    async fn pull(&self) -> Result<Option<String>, Error> {
-        let old_revision = self.current_revision().await;
+    fn pull(&self) -> Result<Option<String>, Error> {
+        let old_revision = self.current_revision();
 
         let status = Command::new("git")
             .arg("pull")
@@ -170,7 +168,6 @@ impl Plugin {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .await
             .map_err(|e| Error::Pull(self.name.clone(), e.to_string()))?;
 
         if let Some(code) = status.code() {
@@ -183,8 +180,8 @@ impl Plugin {
         }
 
         if let Some(old) = old_revision {
-            if let Some(new) = self.current_revision().await {
-                return Ok(self.log(old, new).await);
+            if let Some(new) = self.current_revision() {
+                return Ok(self.log(old, new));
             }
         }
 
@@ -195,17 +192,16 @@ impl Plugin {
         format!("try %[ require-module {} ]\n{}\n", self.name, self.config)
     }
 
-    async fn current_revision(&self) -> Option<String> {
+    fn current_revision(&self) -> Option<String> {
         let output = Command::new("git")
             .args(["rev-parse", "HEAD"])
             .output()
-            .await
             .ok()?;
 
         Some(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    async fn log(&self, old_revision: String, new_revision: String) -> Option<String> {
+    fn log(&self, old_revision: String, new_revision: String) -> Option<String> {
         if old_revision == new_revision {
             return None;
         }
@@ -215,7 +211,6 @@ impl Plugin {
         let output = Command::new("git")
             .args(["log", &range, "--oneline", "--no-decorate", "--reverse"])
             .output()
-            .await
             .ok()?;
 
         Some(String::from_utf8_lossy(&output.stdout).to_string())

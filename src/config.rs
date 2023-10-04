@@ -1,11 +1,11 @@
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use smol::fs::File;
-use smol::io::AsyncWriteExt;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::os::unix;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
@@ -191,17 +191,16 @@ impl Config {
         Ok(())
     }
 
-    async fn create_kak_file(&self) -> Result<Kak> {
+    fn create_kak_file(&self) -> Result<Kak> {
         let file = File::create(&self.almoxarife_kak_file)
-            .await
             .context("couldn't create almoxarife.kak file")?;
 
         Ok(Kak(file))
     }
 
-    pub async fn create_kak_file_with_prelude(&self) -> Result<Kak> {
-        let mut kak = self.create_kak_file().await?;
-        kak.write(CONFIG_PRELUDE.as_bytes()).await?;
+    pub fn create_kak_file_with_prelude(&self) -> Result<Kak> {
+        let mut kak = self.create_kak_file()?;
+        kak.write(CONFIG_PRELUDE.as_bytes())?;
         Ok(kak)
     }
 }
@@ -209,17 +208,13 @@ impl Config {
 pub struct Kak(File);
 
 impl Kak {
-    pub async fn write(&mut self, data: &[u8]) -> Result<()> {
-        self.0
-            .write_all(data)
-            .await
-            .context("couldn't write kak file")
+    pub fn write(&mut self, data: &[u8]) -> Result<()> {
+        self.0.write_all(data).context("couldn't write kak file")
     }
 
-    pub async fn close(&mut self) -> Result<()> {
+    pub fn close(&mut self) -> Result<()> {
         self.0
             .write_all("🧺".as_bytes())
-            .await
             .context("couldn't write kak file")
     }
 }
