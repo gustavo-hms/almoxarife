@@ -94,7 +94,7 @@ impl Config {
             Yaml::Hash(hash) => {
                 for element in hash.iter() {
                     if let (Yaml::String(key), Yaml::Hash(hash)) = element {
-                        let group = self.build_plugin(key, hash)?;
+                        let group = self.build_plugin_group(key, hash)?;
 
                         for plugin in group.into_iter() {
                             plugins.push(plugin);
@@ -111,7 +111,7 @@ impl Config {
         Ok(plugins)
     }
 
-    fn build_plugin(&self, name: &str, hash: &Hash) -> Result<PluginGroup> {
+    fn build_plugin_group(&self, name: &str, hash: &Hash) -> Result<PluginGroup> {
         let mut builder = PluginGroup::builder(name, self);
 
         for (key, value) in hash.iter() {
@@ -141,7 +141,7 @@ impl Config {
                 }
 
                 (Some(key), Yaml::Hash(hash)) => {
-                    let child = self.build_plugin(key, hash)?;
+                    let child = self.build_plugin_group(key, hash)?;
                     builder = builder.add_child(child);
                 }
 

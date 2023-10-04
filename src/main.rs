@@ -101,7 +101,8 @@ fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
         progress.clear();
 
         if !changes.is_empty() {
-            println!("Updates\n-------\n");
+            println!("Updates");
+            println!("-------\n");
             println!("{}", changes.join("\n"));
         }
 
