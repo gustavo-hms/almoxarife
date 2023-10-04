@@ -12,11 +12,11 @@ use crate::config::Config;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("Could not clone {0}: {1}")]
+    #[error("could not clone {0}: {1}")]
     Clone(String, String),
-    #[error("Could not update {0}: {1}")]
+    #[error("could not update {0}: {1}")]
     Pull(String, String),
-    #[error("Could not activate {0}: {1}")]
+    #[error("could not activate {0}: {1}")]
     Link(String, String),
 }
 
@@ -266,7 +266,7 @@ impl PluginBuilder {
     pub fn build(mut self) -> anyhow::Result<PluginGroup> {
         let location = self
             .location
-            .ok_or_else(|| anyhow!("Missing `location` field for plugin {}", self.name))?;
+            .ok_or_else(|| anyhow!("missing `location` field for plugin {}", self.name))?;
 
         if let Location::Path(path) = &location {
             self.repository_path = path.clone();
