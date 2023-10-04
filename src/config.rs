@@ -19,6 +19,7 @@ use yaml_rust::Yaml;
 use yaml_rust::YamlLoader;
 
 use crate::plugin::Plugin;
+use crate::plugin::PluginGroup;
 
 const CONFIG_PRELUDE: &str = r#"
 hook global KakBegin .* %🧺
@@ -93,7 +94,11 @@ impl Config {
             Yaml::Hash(hash) => {
                 for element in hash.iter() {
                     if let (Yaml::String(key), Yaml::Hash(hash)) = element {
-                        plugins.push(self.build_plugin(key, hash)?);
+                        let group = self.build_plugin(key, hash)?;
+
+                        for plugin in group.into_iter() {
+                            plugins.push(plugin);
+                        }
                     } else {
                         bail!("unexpected field {element:?}")
                     }
@@ -106,8 +111,8 @@ impl Config {
         Ok(plugins)
     }
 
-    fn build_plugin(&self, name: &str, hash: &Hash) -> Result<Plugin> {
-        let mut builder = Plugin::builder(name, self);
+    fn build_plugin(&self, name: &str, hash: &Hash) -> Result<PluginGroup> {
+        let mut builder = PluginGroup::builder(name, self);
 
         for (key, value) in hash.iter() {
             match (key.as_str(), value) {

@@ -44,7 +44,6 @@ fn main() -> Result<()> {
 
 fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
     let mut kak = config.create_kak_file_with_prelude()?;
-    let plugins: Vec<_> = plugins.iter().flat_map(Plugin::iter).collect();
     let number_of_plugins = plugins.len();
     let mut errors = Vec::new();
     let mut changes = Vec::new();

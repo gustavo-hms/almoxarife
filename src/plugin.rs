@@ -57,17 +57,12 @@ pub enum Location {
 }
 
 #[derive(Debug)]
-pub struct Plugin {
-    pub name: String,
-    location: Location,
-    disabled: bool,
-    config: String,
-    repository_path: PathBuf,
-    link_path: PathBuf,
-    children: Vec<Plugin>,
+pub struct PluginGroup {
+    parent: Plugin,
+    children: Vec<PluginGroup>,
 }
 
-impl Plugin {
+impl PluginGroup {
     pub fn builder(name: &str, config: &Config) -> PluginBuilder {
         let repository_path = config.almoxarife_data_dir.join(name);
         let link_path = config.autoload_plugins_dir.join(name);
@@ -83,15 +78,31 @@ impl Plugin {
         }
     }
 
-    pub fn iter(&self) -> Box<dyn Iterator<Item = &Plugin> + '_> {
-        if self.disabled {
+    pub fn into_iter(self) -> Box<dyn Iterator<Item = Plugin>> {
+        if self.parent.disabled {
             return Box::new(iter::empty());
         }
 
-        let children = self.children.iter().flat_map(|child| child.iter());
-        Box::new(iter::once(self).chain(children))
-    }
+        let children = self
+            .children
+            .into_iter()
+            .flat_map(|child| child.into_iter());
 
+        Box::new(iter::once(self.parent).chain(children))
+    }
+}
+
+#[derive(Debug)]
+pub struct Plugin {
+    pub name: String,
+    location: Location,
+    disabled: bool,
+    config: String,
+    repository_path: PathBuf,
+    link_path: PathBuf,
+}
+
+impl Plugin {
     fn repository_path_exists(&self) -> bool {
         fs::metadata(&self.repository_path).is_ok()
     }
@@ -224,7 +235,7 @@ pub struct PluginBuilder {
     config: String,
     repository_path: PathBuf,
     link_path: PathBuf,
-    children: Vec<Plugin>,
+    children: Vec<PluginGroup>,
 }
 
 impl PluginBuilder {
@@ -247,12 +258,12 @@ impl PluginBuilder {
         self
     }
 
-    pub fn add_child(mut self, child: Plugin) -> PluginBuilder {
+    pub fn add_child(mut self, child: PluginGroup) -> PluginBuilder {
         self.children.push(child);
         self
     }
 
-    pub fn build(mut self) -> anyhow::Result<Plugin> {
+    pub fn build(mut self) -> anyhow::Result<PluginGroup> {
         let location = self
             .location
             .ok_or_else(|| anyhow!("Missing `location` field for plugin {}", self.name))?;
@@ -261,14 +272,16 @@ impl PluginBuilder {
             self.repository_path = path.clone();
         };
 
-        Ok(Plugin {
-            name: self.name,
-            disabled: self.disabled,
-            config: self.config,
-            repository_path: self.repository_path,
-            link_path: self.link_path,
+        Ok(PluginGroup {
+            parent: Plugin {
+                name: self.name,
+                disabled: self.disabled,
+                config: self.config,
+                repository_path: self.repository_path,
+                link_path: self.link_path,
+                location,
+            },
             children: self.children,
-            location,
         })
     }
 }
