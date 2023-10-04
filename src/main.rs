@@ -7,11 +7,9 @@ use std::thread;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
+use colorized::Color;
+use colorized::Colors;
 use config::Config;
-use kdam::term::Colorizer;
-use kdam::tqdm;
-use kdam::Column;
-use kdam::RichProgress;
 use plugin::Status;
 
 mod config;
@@ -49,11 +47,6 @@ fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
     let mut changes = Vec::new();
     let (tx, rx) = mpsc::channel();
 
-    let mut progress = RichProgress::new(
-        tqdm!(total = number_of_plugins),
-        vec![Column::Text("Updating".into(), None), Column::Bar],
-    );
-
     thread::scope(|s| {
         for plugin in plugins {
             let tx = tx.clone();
@@ -68,37 +61,33 @@ fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
             match rx.recv()? {
                 Ok(Status::Installed { name, config }) => {
                     kak.write(config.as_bytes())?;
-                    progress.write(format!("{name:>20} {}", "installed".colorize("green")))
+                    println!("{name:>20} {}", "installed".color(Colors::GreenFg))
                 }
 
                 Ok(Status::Unchanged { name, config }) => {
                     kak.write(config.as_bytes())?;
-                    progress.write(format!("{name:>20} {}", "unchanged".colorize("blue")))
+                    println!("{name:>20} {}", "unchanged".color(Colors::BlueFg))
                 }
 
                 Ok(Status::Updated { name, log, config }) => {
                     kak.write(config.as_bytes())?;
-                    progress.write(format!("{name:>20} {}", "updated".colorize("green")));
+                    println!("{name:>20} {}", "updated".color(Colors::GreenFg));
                     changes.push(format!("{}:\n\n{}\n", name, log));
                 }
 
                 Ok(Status::Local { name, config }) => {
                     kak.write(config.as_bytes())?;
-                    progress.write(format!("{name:>20} {}", "local".colorize("yellow")))
+                    println!("{name:>20} {}", "local".color(Colors::YellowFg))
                 }
 
                 Err(error) => {
-                    let message = format!("{:>20} {}", error.plugin(), "failed".colorize("red"));
-                    progress.write(message);
+                    println!("{:>20} {}", error.plugin(), "failed".color(Colors::RedFg));
                     errors.push(error.to_string());
                 }
             }
-
-            progress.update(1);
         }
 
         kak.close()?;
-        progress.clear();
 
         if !changes.is_empty() {
             println!("Updates");
