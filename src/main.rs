@@ -68,31 +68,29 @@ fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
         );
 
         for _ in 0..number_of_plugins {
-            match rx.recv() {
-                Err(error) => errors.push(error.to_string()),
-
-                Ok(Ok(Status::Installed { name, config })) => {
+            match rx.recv()? {
+                Ok(Status::Installed { name, config }) => {
                     kak.write(config.as_bytes())?;
                     progress.write(format!("{name:>20} {}", "installed".colorize("green")))
                 }
 
-                Ok(Ok(Status::Unchanged { name, config })) => {
+                Ok(Status::Unchanged { name, config }) => {
                     kak.write(config.as_bytes())?;
                     progress.write(format!("{name:>20} {}", "unchanged".colorize("blue")))
                 }
 
-                Ok(Ok(Status::Updated { name, log, config })) => {
+                Ok(Status::Updated { name, log, config }) => {
                     kak.write(config.as_bytes())?;
                     progress.write(format!("{name:>20} {}", "updated".colorize("green")));
                     changes.push(format!("{}:\n\n{}\n", name, log));
                 }
 
-                Ok(Ok(Status::Local { name, config })) => {
+                Ok(Status::Local { name, config }) => {
                     kak.write(config.as_bytes())?;
                     progress.write(format!("{name:>20} {}", "local".colorize("yellow")))
                 }
 
-                Ok(Err(error)) => {
+                Err(error) => {
                     let message = format!("{:>20} {}", error.plugin(), "failed".colorize("red"));
                     progress.write(message);
                     errors.push(error.to_string());
