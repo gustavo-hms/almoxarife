@@ -46,10 +46,16 @@ fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
     let mut kak = config.create_kak_file_with_prelude()?;
     let plugins: Vec<_> = plugins.iter().flat_map(Plugin::iter).collect();
     let number_of_plugins = plugins.len();
+    let mut errors = Vec::new();
+    let mut changes = Vec::new();
+    let (tx, rx) = mpsc::channel();
+
+    let mut progress = RichProgress::new(
+        tqdm!(total = number_of_plugins),
+        vec![Column::Text("Updating".into(), None), Column::Bar],
+    );
 
     thread::scope(|s| {
-        let (tx, rx) = mpsc::channel();
-
         for plugin in plugins {
             let tx = tx.clone();
 
@@ -58,14 +64,6 @@ fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
                 tx.send(result)
             });
         }
-
-        let mut errors = Vec::new();
-        let mut changes = Vec::new();
-
-        let mut progress = RichProgress::new(
-            tqdm!(total = number_of_plugins),
-            vec![Column::Text("Updating".into(), None), Column::Bar],
-        );
 
         for _ in 0..number_of_plugins {
             match rx.recv()? {
