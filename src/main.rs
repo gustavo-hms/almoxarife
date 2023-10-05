@@ -42,7 +42,6 @@ fn main() -> Result<()> {
 
 fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
     let mut kak = config.create_kak_file_with_prelude()?;
-    let number_of_plugins = plugins.len();
     let mut errors = Vec::new();
     let mut changes = Vec::new();
     let (tx, rx) = mpsc::channel();
@@ -57,7 +56,7 @@ fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
             });
         }
 
-        for _ in 0..number_of_plugins {
+        for _ in 0..plugins.len() {
             match rx.recv()? {
                 Ok(Status::Installed { name, config }) => {
                     kak.write(config.as_bytes())?;
