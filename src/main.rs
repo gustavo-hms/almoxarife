@@ -7,15 +7,15 @@ use anyhow::Context;
 use anyhow::Result;
 use colorized::Color;
 use colorized::Colors;
+use tokio::runtime::Builder;
+use tokio::task::JoinSet;
+
 use config::Config;
+use plugin::Plugin;
 use plugin::Status;
 
 mod config;
 mod plugin;
-
-use plugin::Plugin;
-use tokio::runtime::Builder;
-use tokio::task::JoinSet;
 
 fn main() -> Result<()> {
     let config = Config::new();
