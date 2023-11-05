@@ -90,7 +90,7 @@ impl PluginTree {
 
 #[derive(Debug)]
 pub struct Plugin {
-    pub name: String,
+    name: String,
     location: Location,
     disabled: bool,
     config: String,
