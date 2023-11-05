@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use std::fs;
-use std::future::Future;
 use std::iter;
 use std::os::unix;
 use std::path::PathBuf;
@@ -108,28 +107,26 @@ impl Plugin {
         fs::metadata(&self.repository_path).is_ok()
     }
 
-    pub fn update(self) -> impl Future<Output = Result<Status, Error>> + Send {
-        async move {
-            let config = self.config();
-            let name = self.name.clone();
+    pub async fn update(self) -> Result<Status, Error> {
+        let config = self.config();
+        let name = self.name.clone();
 
-            let status = match (&self.location, self.repository_path_exists()) {
-                (Location::Url(_), true) => match self.pull().await? {
-                    None => Status::Unchanged { name, config },
-                    Some(log) => Status::Updated { name, log, config },
-                },
+        let status = match (&self.location, self.repository_path_exists()) {
+            (Location::Url(_), true) => match self.pull().await? {
+                None => Status::Unchanged { name, config },
+                Some(log) => Status::Updated { name, log, config },
+            },
 
-                (Location::Url(url), false) => {
-                    self.clone_repo(url).await?;
-                    Status::Installed { name, config }
-                }
+            (Location::Url(url), false) => {
+                self.clone_repo(url).await?;
+                Status::Installed { name, config }
+            }
 
-                _ => Status::Local { name, config },
-            };
+            _ => Status::Local { name, config },
+        };
 
-            self.symlink().await?;
-            Ok(status)
-        }
+        self.symlink().await?;
+        Ok(status)
     }
 
     async fn symlink(&self) -> Result<(), Error> {

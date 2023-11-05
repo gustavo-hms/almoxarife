@@ -39,10 +39,10 @@ fn main() -> Result<()> {
     config.create_dirs()?;
 
     let runtime = Builder::new_current_thread().enable_io().build()?;
-    runtime.block_on(manage_plugins(plugins, &config))
+    runtime.block_on(manage_plugins(plugins, config))
 }
 
-async fn manage_plugins(plugins: Vec<Plugin>, config: &Config) -> Result<()> {
+async fn manage_plugins(plugins: Vec<Plugin>, config: Config) -> Result<()> {
     let mut kak = config.create_kak_file_with_prelude()?;
     let mut set = JoinSet::new();
 
