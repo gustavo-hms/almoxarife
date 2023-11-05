@@ -174,7 +174,7 @@ impl Config {
     }
 
     fn link_runtime_dir(&self) -> Result<()> {
-        let kakoune = Command::new("kak")
+        let mut kakoune = Command::new("kak")
             .args(["-d", "-s", "almoxarife", "-E"])
             .arg("echo -to-file /dev/stdout %val[runtime]")
             .stdout(Stdio::piped())
@@ -182,11 +182,13 @@ impl Config {
 
         thread::sleep(Duration::from_millis(100));
 
-        let mut kill = Command::new("kill")
-            .args(["-s", "TERM", &kakoune.id().to_string()])
-            .spawn()?;
+        kakoune.kill()?;
 
-        kill.wait()?;
+        // let mut kill = Command::new("kill")
+        //     .args(["-s", "TERM", &kakoune.id().to_string()])
+        //     .spawn()?;
+
+        // kill.wait()?;
 
         let output = kakoune.wait_with_output()?;
         let runtime_dir = OsStr::from_bytes(&output.stdout);
