@@ -100,14 +100,15 @@ pub struct Plugin {
 
 impl Plugin {
     fn new(name: String, node: &PluginTree, config: &Config) -> Plugin {
-        let repository_path = config.almoxarife_data_dir.join(&name);
         let link_path = config.autoload_plugins_dir.join(&name);
 
-        let (location, repository_path) = if let Ok(url) = Url::parse(&node.location) {
-            (Location::Url(url), repository_path.clone())
-        } else {
-            let path: PathBuf = (&node.location).into();
-            (Location::Path(path.clone()), path)
+        let (location, repository_path) = match Url::parse(&node.location) {
+            Ok(url) => (Location::Url(url), config.almoxarife_data_dir.join(&name)),
+
+            Err(_) => {
+                let path: PathBuf = (&node.location).into();
+                (Location::Path(path.clone()), path)
+            }
         };
 
         Plugin {
