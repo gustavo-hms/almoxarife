@@ -19,7 +19,7 @@ use yaml_rust::Yaml;
 use yaml_rust::YamlLoader;
 
 use crate::plugin::Plugin;
-use crate::plugin::PluginGroup;
+use crate::plugin::PluginTree;
 
 const CONFIG_PRELUDE: &str = r#"
 hook global KakBegin .* %🧺
@@ -94,7 +94,7 @@ impl Config {
             Yaml::Hash(hash) => {
                 for element in hash.iter() {
                     if let (Yaml::String(key), Yaml::Hash(hash)) = element {
-                        let group = self.build_plugin_group(key, hash)?;
+                        let group = self.build_plugin_tree(key, hash)?;
 
                         for plugin in group.into_iter() {
                             plugins.push(plugin);
@@ -111,8 +111,8 @@ impl Config {
         Ok(plugins)
     }
 
-    fn build_plugin_group(&self, name: &str, hash: &Hash) -> Result<PluginGroup> {
-        let mut builder = PluginGroup::builder(name, self);
+    fn build_plugin_tree(&self, name: &str, hash: &Hash) -> Result<PluginTree> {
+        let mut builder = PluginTree::builder(name, self);
 
         for (key, value) in hash.iter() {
             match (key.as_str(), value) {
@@ -141,7 +141,7 @@ impl Config {
                 }
 
                 (Some(key), Yaml::Hash(hash)) => {
-                    let child = self.build_plugin_group(key, hash)?;
+                    let child = self.build_plugin_tree(key, hash)?;
                     builder = builder.add_child(child);
                 }
 

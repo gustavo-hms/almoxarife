@@ -1,11 +1,12 @@
 use anyhow::anyhow;
 use std::fs;
+use std::future::Future;
 use std::iter;
 use std::os::unix;
 use std::path::PathBuf;
-use std::process::Command;
 use std::process::Stdio;
 use thiserror::Error;
+use tokio::process::Command;
 use url::Url;
 
 use crate::config::Config;
@@ -30,22 +31,22 @@ impl Error {
     }
 }
 
-pub enum Status<'a> {
+pub enum Status {
     Installed {
-        name: &'a str,
+        name: String,
         config: String,
     },
     Updated {
-        name: &'a str,
+        name: String,
         log: String,
         config: String,
     },
     Unchanged {
-        name: &'a str,
+        name: String,
         config: String,
     },
     Local {
-        name: &'a str,
+        name: String,
         config: String,
     },
 }
@@ -57,12 +58,12 @@ pub enum Location {
 }
 
 #[derive(Debug)]
-pub struct PluginGroup {
+pub struct PluginTree {
     parent: Plugin,
-    children: Vec<PluginGroup>,
+    children: Vec<PluginTree>,
 }
 
-impl PluginGroup {
+impl PluginTree {
     pub fn builder(name: &str, config: &Config) -> PluginBuilder {
         let repository_path = config.almoxarife_data_dir.join(name);
         let link_path = config.autoload_plugins_dir.join(name);
@@ -107,40 +108,31 @@ impl Plugin {
         fs::metadata(&self.repository_path).is_ok()
     }
 
-    pub fn update(&self) -> Result<Status<'_>, Error> {
-        let status = match (&self.location, self.repository_path_exists()) {
-            (Location::Url(_), true) => match self.pull()? {
-                None => Status::Unchanged {
-                    name: &self.name,
-                    config: self.config(),
+    pub fn update(self) -> impl Future<Output = Result<Status, Error>> + Send {
+        async move {
+            let config = self.config();
+            let name = self.name.clone();
+
+            let status = match (&self.location, self.repository_path_exists()) {
+                (Location::Url(_), true) => match self.pull().await? {
+                    None => Status::Unchanged { name, config },
+                    Some(log) => Status::Updated { name, log, config },
                 },
 
-                Some(log) => Status::Updated {
-                    name: &self.name,
-                    log,
-                    config: self.config(),
-                },
-            },
-
-            (Location::Url(url), false) => {
-                self.clone_repo(url)?;
-                Status::Installed {
-                    name: &self.name,
-                    config: self.config(),
+                (Location::Url(url), false) => {
+                    self.clone_repo(url).await?;
+                    Status::Installed { name, config }
                 }
-            }
 
-            _ => Status::Local {
-                name: &self.name,
-                config: self.config(),
-            },
-        };
+                _ => Status::Local { name, config },
+            };
 
-        self.symlink()?;
-        Ok(status)
+            self.symlink().await?;
+            Ok(status)
+        }
     }
 
-    fn symlink(&self) -> Result<(), Error> {
+    async fn symlink(&self) -> Result<(), Error> {
         if !self.disabled {
             unix::fs::symlink(&self.repository_path, &self.link_path)
                 .map_err(|e| Error::Link(self.name.clone(), e.to_string()))?;
@@ -149,7 +141,7 @@ impl Plugin {
         Ok(())
     }
 
-    fn clone_repo(&self, url: &Url) -> Result<(), Error> {
+    async fn clone_repo(&self, url: &Url) -> Result<(), Error> {
         let location = format!("{}.git", url);
 
         let status = Command::new("git")
@@ -159,6 +151,7 @@ impl Plugin {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
+            .await
             .map_err(|e| Error::Clone(self.name.clone(), e.to_string()))?;
 
         match status.code() {
@@ -170,8 +163,8 @@ impl Plugin {
         }
     }
 
-    fn pull(&self) -> Result<Option<String>, Error> {
-        let old_revision = self.current_revision();
+    async fn pull(&self) -> Result<Option<String>, Error> {
+        let old_revision = self.current_revision().await;
 
         let status = Command::new("git")
             .arg("pull")
@@ -179,6 +172,7 @@ impl Plugin {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
+            .await
             .map_err(|e| Error::Pull(self.name.clone(), e.to_string()))?;
 
         if let Some(code) = status.code() {
@@ -191,8 +185,8 @@ impl Plugin {
         }
 
         if let Some(old) = old_revision {
-            if let Some(new) = self.current_revision() {
-                return Ok(self.log(old, new));
+            if let Some(new) = self.current_revision().await {
+                return Ok(self.log(old, new).await);
             }
         }
 
@@ -203,16 +197,17 @@ impl Plugin {
         format!("try %[ require-module {} ]\n{}\n", self.name, self.config)
     }
 
-    fn current_revision(&self) -> Option<String> {
+    async fn current_revision(&self) -> Option<String> {
         let output = Command::new("git")
             .args(["rev-parse", "HEAD"])
             .output()
+            .await
             .ok()?;
 
         Some(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    fn log(&self, old_revision: String, new_revision: String) -> Option<String> {
+    async fn log(&self, old_revision: String, new_revision: String) -> Option<String> {
         if old_revision == new_revision {
             return None;
         }
@@ -222,6 +217,7 @@ impl Plugin {
         let output = Command::new("git")
             .args(["log", &range, "--oneline", "--no-decorate", "--reverse"])
             .output()
+            .await
             .ok()?;
 
         Some(String::from_utf8_lossy(&output.stdout).to_string())
@@ -235,7 +231,7 @@ pub struct PluginBuilder {
     config: String,
     repository_path: PathBuf,
     link_path: PathBuf,
-    children: Vec<PluginGroup>,
+    children: Vec<PluginTree>,
 }
 
 impl PluginBuilder {
@@ -258,12 +254,12 @@ impl PluginBuilder {
         self
     }
 
-    pub fn add_child(mut self, child: PluginGroup) -> PluginBuilder {
+    pub fn add_child(mut self, child: PluginTree) -> PluginBuilder {
         self.children.push(child);
         self
     }
 
-    pub fn build(mut self) -> anyhow::Result<PluginGroup> {
+    pub fn build(mut self) -> anyhow::Result<PluginTree> {
         let location = self
             .location
             .ok_or_else(|| anyhow!("missing `location` field for plugin {}", self.name))?;
@@ -272,7 +268,7 @@ impl PluginBuilder {
             self.repository_path = path.clone();
         };
 
-        Ok(PluginGroup {
+        Ok(PluginTree {
             parent: Plugin {
                 name: self.name,
                 disabled: self.disabled,

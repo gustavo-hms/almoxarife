@@ -1,8 +1,6 @@
 use std::env;
 use std::process;
 use std::process::Command;
-use std::sync::mpsc;
-use std::thread;
 
 use anyhow::anyhow;
 use anyhow::Context;
@@ -16,6 +14,8 @@ mod config;
 mod plugin;
 
 use plugin::Plugin;
+use tokio::runtime::Builder;
+use tokio::task::JoinSet;
 
 fn main() -> Result<()> {
     let config = Config::new();
@@ -37,69 +37,64 @@ fn main() -> Result<()> {
         .context(format!("couldn't parse {}", config.file.to_str().unwrap()))?;
 
     config.create_dirs()?;
-    manage_plugins(&plugins, &config)
+
+    let runtime = Builder::new_current_thread().enable_io().build()?;
+    runtime.block_on(manage_plugins(plugins, &config))
 }
 
-fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
+async fn manage_plugins(plugins: Vec<Plugin>, config: &Config) -> Result<()> {
     let mut kak = config.create_kak_file_with_prelude()?;
-    let (tx, rx) = mpsc::channel();
+    let mut set = JoinSet::new();
 
-    thread::scope(|s| {
-        for plugin in plugins {
-            let tx = tx.clone();
+    for plugin in plugins {
+        set.spawn(plugin.update());
+    }
 
-            s.spawn(move || {
-                let result = plugin.update();
-                tx.send(result)
-            });
-        }
+    let mut errors = Vec::new();
+    let mut changes = Vec::new();
 
-        let mut errors = Vec::new();
-        let mut changes = Vec::new();
+    while let Some(result) = set.join_next().await {
+        match result? {
+            Ok(Status::Installed { name, config }) => {
+                kak.write(config.as_bytes())?;
+                println!("{name:>20} {}", "installed".color(Colors::GreenFg))
+            }
 
-        for _ in 0..plugins.len() {
-            match rx.recv()? {
-                Ok(Status::Installed { name, config }) => {
-                    kak.write(config.as_bytes())?;
-                    println!("{name:>20} {}", "installed".color(Colors::GreenFg))
-                }
+            Ok(Status::Unchanged { name, config }) => {
+                kak.write(config.as_bytes())?;
+                println!("{name:>20} {}", "unchanged".color(Colors::BlueFg))
+            }
 
-                Ok(Status::Unchanged { name, config }) => {
-                    kak.write(config.as_bytes())?;
-                    println!("{name:>20} {}", "unchanged".color(Colors::BlueFg))
-                }
+            Ok(Status::Updated { name, log, config }) => {
+                kak.write(config.as_bytes())?;
+                println!("{name:>20} {}", "updated".color(Colors::GreenFg));
+                changes.push(format!("{}:\n\n{}\n", name, log));
+            }
 
-                Ok(Status::Updated { name, log, config }) => {
-                    kak.write(config.as_bytes())?;
-                    println!("{name:>20} {}", "updated".color(Colors::GreenFg));
-                    changes.push(format!("{}:\n\n{}\n", name, log));
-                }
+            Ok(Status::Local { name, config }) => {
+                kak.write(config.as_bytes())?;
+                println!("{name:>20} {}", "local".color(Colors::YellowFg))
+            }
 
-                Ok(Status::Local { name, config }) => {
-                    kak.write(config.as_bytes())?;
-                    println!("{name:>20} {}", "local".color(Colors::YellowFg))
-                }
-
-                Err(error) => {
-                    println!("{:>20} {}", error.plugin(), "failed".color(Colors::RedFg));
-                    errors.push(error.to_string());
-                }
+            Err(error) => {
+                println!("{:>20} {}", error.plugin(), "failed".color(Colors::RedFg));
+                errors.push(error.to_string());
             }
         }
+    }
 
-        kak.close()?;
+    kak.close()?;
 
-        if !changes.is_empty() {
-            println!("Updates");
-            println!("-------\n");
-            println!("{}", changes.join("\n"));
-        }
+    if !changes.is_empty() {
+        println!("Updates");
+        println!("-------\n");
+        println!("{}", changes.join("\n"));
+    }
 
-        if !errors.is_empty() {
-            eprintln!();
-            Err(anyhow!("\n  {}", errors.join("\n  ")))
-        } else {
-            Ok(())
-        }
-    })
+    if !errors.is_empty() {
+        eprintln!();
+        Err(anyhow!("\n  {}", errors.join("\n  ")))
+    } else {
+        Ok(())
+    }
 }
