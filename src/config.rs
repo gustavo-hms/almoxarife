@@ -21,7 +21,7 @@ use yaml_rust::YamlLoader;
 use crate::plugin::Plugin;
 use crate::plugin::PluginTree;
 
-const CONFIG_PRELUDE: &str = r#"
+const CONFIG_PRELUDE: &str = r"
 hook global KakBegin .* %🧺
 
 add-highlighter shared/almoxarife regions
@@ -32,7 +32,7 @@ hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
     add-highlighter window/almoxarife ref almoxarife
     hook -once -always window WinClose .* %{ remove-highlighter window/almoxarife }
 }
-"#;
+";
 
 pub struct Config {
     /// The directory where plugins' repos will be checked out (usually `~/.local/share/almoxarife`).
