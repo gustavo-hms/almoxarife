@@ -183,13 +183,6 @@ impl Config {
         thread::sleep(Duration::from_millis(100));
 
         kakoune.kill()?;
-
-        // let mut kill = Command::new("kill")
-        //     .args(["-s", "TERM", &kakoune.id().to_string()])
-        //     .spawn()?;
-
-        // kill.wait()?;
-
         let output = kakoune.wait_with_output()?;
         let runtime_dir = OsStr::from_bytes(&output.stdout);
         let runtime_dir = PathBuf::from(runtime_dir).join("rc");
