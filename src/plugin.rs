@@ -68,20 +68,17 @@ pub struct PluginTree {
 }
 
 impl PluginTree {
-    pub fn plugins(&self, name: &str, config: &Config) -> Vec<Plugin> {
+    pub fn plugins(&self, name: String, config: &Config) -> Vec<Plugin> {
         if self.disabled {
             return Vec::new();
         }
 
-        let repository_path = config.almoxarife_data_dir.join(name);
-        let link_path = config.autoload_plugins_dir.join(name);
-
         let children = self
             .children
             .iter()
-            .flat_map(|(child_name, child)| child.plugins(child_name, config));
+            .flat_map(|(child_name, child)| child.plugins(child_name.clone(), config));
 
-        let mut plugins = vec![Plugin::new(name, self, &repository_path, link_path)];
+        let mut plugins = vec![Plugin::new(name, self, config)];
 
         for child in children {
             plugins.push(child);
@@ -102,7 +99,10 @@ pub struct Plugin {
 }
 
 impl Plugin {
-    fn new(name: &str, node: &PluginTree, repository_path: &PathBuf, link_path: PathBuf) -> Plugin {
+    fn new(name: String, node: &PluginTree, config: &Config) -> Plugin {
+        let repository_path = config.almoxarife_data_dir.join(&name);
+        let link_path = config.autoload_plugins_dir.join(&name);
+
         let (location, repository_path) = if let Ok(url) = Url::parse(&node.location) {
             (Location::Url(url), repository_path.clone())
         } else {
@@ -111,7 +111,7 @@ impl Plugin {
         };
 
         Plugin {
-            name: name.to_string(),
+            name,
             disabled: node.disabled,
             config: node.config.clone(),
             location,

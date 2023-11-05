@@ -15,9 +15,6 @@ use std::process::Command;
 use std::process::Stdio;
 use std::thread;
 use std::time::Duration;
-use yaml_rust::yaml::Hash;
-use yaml_rust::Yaml;
-use yaml_rust::YamlLoader;
 
 use crate::plugin::Plugin;
 use crate::plugin::PluginTree;
@@ -91,7 +88,7 @@ impl Config {
 
         let plugins = tree
             .into_iter()
-            .flat_map(|(name, tree)| tree.plugins(&name, self))
+            .flat_map(|(name, tree)| tree.plugins(name, self))
             .collect();
 
         Ok(plugins)
