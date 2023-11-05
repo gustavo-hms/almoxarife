@@ -1,6 +1,7 @@
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use std::collections::HashMap;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -81,75 +82,19 @@ impl Config {
     }
 
     pub fn parse(&self) -> Result<Vec<Plugin>> {
-        let yaml = fs::read_to_string(&self.file)?;
-        let doc = YamlLoader::load_from_str(&yaml)?;
+        let file = File::open(&self.file)?;
+        let tree: HashMap<String, PluginTree> = serde_yaml::from_reader(&file)?;
 
-        if doc.is_empty() {
+        if tree.is_empty() {
             bail!("configuration file has no YAML element");
         }
 
-        let mut plugins = Vec::new();
-
-        match &doc[0] {
-            Yaml::Hash(hash) => {
-                for element in hash.iter() {
-                    if let (Yaml::String(key), Yaml::Hash(hash)) = element {
-                        let group = self.build_plugin_tree(key, hash)?;
-
-                        for plugin in group.into_iter() {
-                            plugins.push(plugin);
-                        }
-                    } else {
-                        bail!("unexpected field {element:?}")
-                    }
-                }
-            }
-
-            _ => bail!("couldn't parse configuration file"),
-        }
+        let plugins = tree
+            .into_iter()
+            .flat_map(|(name, tree)| tree.plugins(&name, self))
+            .collect();
 
         Ok(plugins)
-    }
-
-    fn build_plugin_tree(&self, name: &str, hash: &Hash) -> Result<PluginTree> {
-        let mut builder = PluginTree::builder(name, self);
-
-        for (key, value) in hash.iter() {
-            match (key.as_str(), value) {
-                (Some("location"), Yaml::String(location)) => {
-                    builder = builder.set_location(location);
-                }
-
-                (Some("location"), _) => {
-                    bail!("expecting a string for the `location` field of plugin {name}")
-                }
-
-                (Some("disabled"), Yaml::Boolean(disabled)) => {
-                    builder = builder.set_disabled(*disabled);
-                }
-
-                (Some("disabled"), _) => {
-                    bail!("expecting a boolean for the `disabled` field of plugin {name}")
-                }
-
-                (Some("config"), Yaml::String(config)) => {
-                    builder = builder.set_config(config.clone());
-                }
-
-                (Some("config"), _) => {
-                    bail!("expecting a string for the `config` field of plugin {name}")
-                }
-
-                (Some(key), Yaml::Hash(hash)) => {
-                    let child = self.build_plugin_tree(key, hash)?;
-                    builder = builder.add_child(child);
-                }
-
-                _ => bail!("unexpected value: `{key:?}: {value:?}`"),
-            }
-        }
-
-        builder.build()
     }
 
     pub fn create_dirs(&self) -> Result<()> {

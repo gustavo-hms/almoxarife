@@ -1,6 +1,6 @@
-use anyhow::anyhow;
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::fs;
-use std::iter;
 use std::os::unix;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -56,39 +56,38 @@ pub enum Location {
     Path(PathBuf),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct PluginTree {
-    parent: Plugin,
-    children: Vec<PluginTree>,
+    location: String,
+    #[serde(default)]
+    config: String,
+    #[serde(default)]
+    disabled: bool,
+    #[serde(flatten)]
+    children: HashMap<String, PluginTree>,
 }
 
 impl PluginTree {
-    pub fn builder(name: &str, config: &Config) -> PluginBuilder {
+    pub fn plugins(&self, name: &str, config: &Config) -> Vec<Plugin> {
+        if self.disabled {
+            return Vec::new();
+        }
+
         let repository_path = config.almoxarife_data_dir.join(name);
         let link_path = config.autoload_plugins_dir.join(name);
 
-        PluginBuilder {
-            name: name.to_string(),
-            location: None,
-            disabled: false,
-            config: String::new(),
-            repository_path,
-            link_path,
-            children: Vec::new(),
-        }
-    }
-
-    pub fn into_iter(self) -> Box<dyn Iterator<Item = Plugin>> {
-        if self.parent.disabled {
-            return Box::new(iter::empty());
-        }
-
         let children = self
             .children
-            .into_iter()
-            .flat_map(|child| child.into_iter());
+            .iter()
+            .flat_map(|(child_name, child)| child.plugins(child_name, config));
 
-        Box::new(iter::once(self.parent).chain(children))
+        let mut plugins = vec![Plugin::new(name, self, &repository_path, link_path)];
+
+        for child in children {
+            plugins.push(child);
+        }
+
+        plugins
     }
 }
 
@@ -103,6 +102,24 @@ pub struct Plugin {
 }
 
 impl Plugin {
+    fn new(name: &str, node: &PluginTree, repository_path: &PathBuf, link_path: PathBuf) -> Plugin {
+        let (location, repository_path) = if let Ok(url) = Url::parse(&node.location) {
+            (Location::Url(url), repository_path.clone())
+        } else {
+            let path: PathBuf = (&node.location).into();
+            (Location::Path(path.clone()), path)
+        };
+
+        Plugin {
+            name: name.to_string(),
+            disabled: node.disabled,
+            config: node.config.clone(),
+            location,
+            repository_path,
+            link_path,
+        }
+    }
+
     fn repository_path_exists(&self) -> bool {
         fs::metadata(&self.repository_path).is_ok()
     }
@@ -218,63 +235,5 @@ impl Plugin {
             .ok()?;
 
         Some(String::from_utf8_lossy(&output.stdout).to_string())
-    }
-}
-
-pub struct PluginBuilder {
-    name: String,
-    location: Option<Location>,
-    disabled: bool,
-    config: String,
-    repository_path: PathBuf,
-    link_path: PathBuf,
-    children: Vec<PluginTree>,
-}
-
-impl PluginBuilder {
-    pub fn set_location(mut self, location: &str) -> PluginBuilder {
-        match Url::parse(location) {
-            Ok(url) => self.location = Some(Location::Url(url)),
-            _ => self.location = Some(Location::Path(location.into())),
-        };
-
-        self
-    }
-
-    pub fn set_config(mut self, config: String) -> PluginBuilder {
-        self.config = config;
-        self
-    }
-
-    pub fn set_disabled(mut self, disabled: bool) -> PluginBuilder {
-        self.disabled = disabled;
-        self
-    }
-
-    pub fn add_child(mut self, child: PluginTree) -> PluginBuilder {
-        self.children.push(child);
-        self
-    }
-
-    pub fn build(mut self) -> anyhow::Result<PluginTree> {
-        let location = self
-            .location
-            .ok_or_else(|| anyhow!("missing `location` field for plugin {}", self.name))?;
-
-        if let Location::Path(path) = &location {
-            self.repository_path = path.clone();
-        };
-
-        Ok(PluginTree {
-            parent: Plugin {
-                name: self.name,
-                disabled: self.disabled,
-                config: self.config,
-                repository_path: self.repository_path,
-                link_path: self.link_path,
-                location,
-            },
-            children: self.children,
-        })
     }
 }
