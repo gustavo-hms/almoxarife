@@ -50,7 +50,6 @@ pub enum Status {
     },
 }
 
-#[derive(Debug)]
 pub enum Location {
     Url(Url),
     Path(PathBuf),
@@ -88,7 +87,6 @@ impl PluginTree {
     }
 }
 
-#[derive(Debug)]
 pub struct Plugin {
     name: String,
     location: Location,
@@ -105,7 +103,7 @@ impl Plugin {
         let (location, repository_path) = match Url::parse(&node.location) {
             Ok(url) => (Location::Url(url), config.almoxarife_data_dir.join(&name)),
 
-            Err(_) => {
+            _ => {
                 let path: PathBuf = (&node.location).into();
                 (Location::Path(path.clone()), path)
             }
