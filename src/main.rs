@@ -42,8 +42,6 @@ fn main() -> Result<()> {
 
 fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
     let mut kak = config.create_kak_file_with_prelude()?;
-    let mut errors = Vec::new();
-    let mut changes = Vec::new();
     let (tx, rx) = mpsc::channel();
 
     thread::scope(|s| {
@@ -55,6 +53,9 @@ fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
                 tx.send(result)
             });
         }
+
+        let mut errors = Vec::new();
+        let mut changes = Vec::new();
 
         for _ in 0..plugins.len() {
             match rx.recv()? {
@@ -96,10 +97,7 @@ fn manage_plugins(plugins: &[Plugin], config: &Config) -> Result<()> {
 
         if !errors.is_empty() {
             eprintln!();
-            Err(anyhow!(
-                "some plugins could not be updated:\n  {}",
-                errors.join("\n  ")
-            ))
+            Err(anyhow!("\n  {}", errors.join("\n  ")))
         } else {
             Ok(())
         }
