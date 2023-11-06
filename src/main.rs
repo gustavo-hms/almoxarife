@@ -7,6 +7,7 @@ use anyhow::Context;
 use anyhow::Result;
 use colorized::Color;
 use colorized::Colors;
+use config::Kak;
 use tokio::runtime::Builder;
 use tokio::task::JoinSet;
 
@@ -37,13 +38,13 @@ fn main() -> Result<()> {
         .context(format!("couldn't parse {}", config.file.to_str().unwrap()))?;
 
     config.create_dirs()?;
+    let kak = config.create_kak_file_with_prelude()?;
 
     let runtime = Builder::new_current_thread().enable_io().build()?;
-    runtime.block_on(manage_plugins(plugins, config))
+    runtime.block_on(manage_plugins(plugins, kak))
 }
 
-async fn manage_plugins(plugins: Vec<Plugin>, config: Config) -> Result<()> {
-    let mut kak = config.create_kak_file_with_prelude()?;
+async fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak) -> Result<()> {
     let mut set = JoinSet::new();
 
     for plugin in plugins {
