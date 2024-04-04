@@ -35,7 +35,7 @@ hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
 pub struct Config {
     /// The directory where plugins' repos will be checked out (usually `~/.local/share/almoxarife`).
     pub almoxarife_data_dir: PathBuf,
-    // The Balaio subdectory inside `autoload`.
+    // The Almoxarife subdirectory inside `autoload`.
     pub autoload_plugins_dir: PathBuf,
     /// The path to `almoxarife.yaml`.
     pub file: PathBuf,
