@@ -218,7 +218,9 @@ impl Plugin {
             .await
             .ok()?;
 
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
+        let mut revision = String::from_utf8_lossy(&output.stdout).to_string();
+        revision.pop(); // Remove \n
+        Some(revision)
     }
 
     async fn log(&self, old_revision: String, new_revision: String) -> Option<String> {
@@ -229,6 +231,7 @@ impl Plugin {
         let range = format!("{old_revision}..{new_revision}");
 
         let output = Command::new("git")
+            .current_dir(&self.repository_path)
             .args(["log", &range, "--oneline", "--no-decorate", "--reverse"])
             .output()
             .await
