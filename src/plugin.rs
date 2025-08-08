@@ -212,6 +212,7 @@ impl Plugin {
 
     async fn current_revision(&self) -> Option<String> {
         let output = Command::new("git")
+            .current_dir(&self.repository_path)
             .args(["rev-parse", "HEAD"])
             .output()
             .await
