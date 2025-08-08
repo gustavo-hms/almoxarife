@@ -1,10 +1,10 @@
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::fs;
 use std::os::unix;
 use std::path::PathBuf;
 use std::process::Stdio;
 use thiserror::Error;
+use tokio::fs;
 use tokio::process::Command;
 use url::Url;
 
@@ -119,15 +119,15 @@ impl Plugin {
         }
     }
 
-    fn repository_path_exists(&self) -> bool {
-        fs::metadata(&self.repository_path).is_ok()
+    async fn repository_path_exists(&self) -> bool {
+        fs::metadata(&self.repository_path).await.is_ok()
     }
 
     pub async fn update(self) -> Result<Status, Error> {
         let config = self.config();
         let name = self.name.clone();
 
-        let status = match (&self.location, self.repository_path_exists()) {
+        let status = match (&self.location, self.repository_path_exists().await) {
             (Location::Url(_), true) => match self.pull().await? {
                 None => Status::Unchanged { name, config },
                 Some(log) => Status::Updated { name, log, config },
