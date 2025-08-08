@@ -69,7 +69,19 @@ async fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak) -> Result<()> {
             Ok(Status::Updated { name, log, config }) => {
                 kak.write(config.as_bytes())?;
                 println!("{name:>20} {}", "updated".color(Colors::GreenFg));
-                changes.push(format!("{}:\n\n{}\n", name, log));
+
+                let message: String = log
+                    .split("\n")
+                    .map(|line| match line.split_once(" ") {
+                        Some((revision, message)) => {
+                            format!("{} {message}\n", revision.color(Colors::BrightBlackFg))
+                        }
+
+                        None => line.to_string(),
+                    })
+                    .collect();
+
+                changes.push(format!("{}:\n{message}", name.color(Colors::GreenFg)));
             }
 
             Ok(Status::Local { name, config }) => {
@@ -87,8 +99,7 @@ async fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak) -> Result<()> {
     kak.close()?;
 
     if !changes.is_empty() {
-        println!("Updates");
-        println!("-------\n");
+        println!("\n{}\n", "Updates".color(Colors::BrightGreenFg));
         println!("{}", changes.join("\n"));
     }
 
