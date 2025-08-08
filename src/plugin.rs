@@ -52,7 +52,7 @@ pub enum Status {
 
 pub enum Location {
     Url(Url),
-    Path(PathBuf),
+    Path,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,7 +105,7 @@ impl Plugin {
 
             _ => {
                 let path: PathBuf = (&node.location).into();
-                (Location::Path(path.clone()), path)
+                (Location::Path, path)
             }
         };
 
