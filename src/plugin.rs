@@ -6,7 +6,6 @@ use std::process::Stdio;
 use thiserror::Error;
 use tokio::fs;
 use tokio::process::Command;
-use url::Url;
 
 use crate::config::Config;
 
@@ -50,11 +49,6 @@ pub enum Status {
     },
 }
 
-pub enum Location {
-    Url(Url),
-    Path,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct PluginTree {
     location: String,
@@ -89,31 +83,36 @@ impl PluginTree {
 
 pub struct Plugin {
     name: String,
-    location: Location,
-    disabled: bool,
-    config: String,
+    location: String,
+    is_local: bool,
     repository_path: PathBuf,
     link_path: PathBuf,
+    disabled: bool,
+    config: String,
+}
+
+fn is_local(location: &str) -> bool {
+    !location.starts_with("https://")
+        && !location.starts_with("http://")
+        && !location.starts_with("git://")
 }
 
 impl Plugin {
     fn new(name: String, node: &PluginTree, config: &Config) -> Plugin {
         let link_path = config.autoload_plugins_dir.join(&name);
 
-        let (location, repository_path) = match Url::parse(&node.location) {
-            Ok(url) => (Location::Url(url), config.almoxarife_data_dir.join(&name)),
-
-            _ => {
-                let path: PathBuf = (&node.location).into();
-                (Location::Path, path)
-            }
+        let (is_local, repository_path) = if is_local(&node.location) {
+            (true, PathBuf::from(&node.location))
+        } else {
+            (false, config.almoxarife_data_dir.join(&name))
         };
 
         Plugin {
             name,
             disabled: node.disabled,
             config: node.config.clone(),
-            location,
+            location: node.location.clone(),
+            is_local,
             repository_path,
             link_path,
         }
@@ -127,18 +126,25 @@ impl Plugin {
         let config = self.config();
         let name = self.name.clone();
 
-        let status = match (&self.location, self.repository_path_exists().await) {
-            (Location::Url(_), true) => match self.pull().await? {
+        let status = match (self.is_local, self.repository_path_exists().await) {
+            (true, true) => Status::Local { name, config },
+
+            (true, false) => {
+                return Err(Error::Link(
+                    name,
+                    format!("the path {} is empty", self.location),
+                ))
+            }
+
+            (false, true) => match self.pull().await? {
                 None => Status::Unchanged { name, config },
                 Some(log) => Status::Updated { name, log, config },
             },
 
-            (Location::Url(url), false) => {
-                self.clone_repo(url).await?;
+            (false, false) => {
+                self.clone_repo(&self.location).await?;
                 Status::Installed { name, config }
             }
-
-            _ => Status::Local { name, config },
         };
 
         self.symlink().await?;
@@ -154,8 +160,8 @@ impl Plugin {
         Ok(())
     }
 
-    async fn clone_repo(&self, url: &Url) -> Result<(), Error> {
-        let location = format!("{}.git", url);
+    async fn clone_repo(&self, url: &str) -> Result<(), Error> {
+        let location = format!("{url}.git");
 
         let status = Command::new("git")
             .arg("clone")

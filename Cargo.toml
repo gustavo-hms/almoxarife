@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-url = "2.2"
 anyhow = "1.0"
 thiserror = "1.0.31"
 colorized = "1.0.0"
