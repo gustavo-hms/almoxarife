@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0"
 colorized = "1.0.0"
 tokio = { version = "1.33.0", features = ["rt", "process", "fs"] }
 serde = { version = "1.0.190", features = ["derive"] }

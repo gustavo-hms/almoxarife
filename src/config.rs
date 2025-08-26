@@ -1,11 +1,12 @@
-use anyhow::bail;
-use anyhow::Context;
-use anyhow::Result;
 use std::collections::HashMap;
 use std::env;
+use std::error;
 use std::ffi::OsStr;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::fs;
 use std::fs::File;
+use std::io;
 use std::io::Write;
 use std::os::unix;
 use std::os::unix::ffi::OsStrExt;
@@ -13,6 +14,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
+use std::result;
 use std::thread;
 use std::time::Duration;
 
@@ -31,6 +33,44 @@ hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
     hook -once -always window WinClose .* %{ remove-highlighter window/almoxarife }
 }
 ";
+
+#[derive(Debug)]
+pub struct Error(String);
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl error::Error for Error {}
+
+impl From<io::Error> for Error {
+    fn from(error: io::Error) -> Self {
+        Error(error.to_string())
+    }
+}
+
+impl From<serde_yaml::Error> for Error {
+    fn from(error: serde_yaml::Error) -> Self {
+        Error(error.to_string())
+    }
+}
+
+pub type Result<A> = result::Result<A, Error>;
+
+trait Context<A> {
+    fn context(self, message: &'static str) -> Result<A>;
+}
+
+impl<A, E: error::Error> Context<A> for result::Result<A, E> {
+    fn context(self, message: &'static str) -> Result<A> {
+        match self {
+            Ok(a) => Ok(a),
+            Err(e) => Err(Error(format!("{message}: {e}"))),
+        }
+    }
+}
 
 pub struct Config {
     /// The directory where plugins' repos will be checked out (usually `~/.local/share/almoxarife`).
@@ -83,7 +123,7 @@ impl Config {
         let tree: HashMap<String, PluginTree> = serde_yaml::from_reader(&file)?;
 
         if tree.is_empty() {
-            bail!("configuration file has no YAML element");
+            return Err(Error("configuration file has no YAML element".to_string()));
         }
 
         let plugins = tree
@@ -151,12 +191,12 @@ pub struct Kak(File);
 
 impl Kak {
     pub fn write(&mut self, data: &[u8]) -> Result<()> {
-        self.0.write_all(data).context("couldn't write kak file")
+        self.0.write_all(data).context("error writing kak file")
     }
 
     pub fn close(&mut self) -> Result<()> {
         self.0
             .write_all("🧺".as_bytes())
-            .context("couldn't write kak file")
+            .context("error writing kak file")
     }
 }

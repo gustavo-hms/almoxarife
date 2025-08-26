@@ -1,14 +1,17 @@
 use std::env;
+use std::error;
+use std::fmt::Debug;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::process;
 use std::process::Command;
+use std::result;
 
-use anyhow::anyhow;
-use anyhow::Context;
-use anyhow::Result;
 use colorized::Color;
 use colorized::Colors;
 use config::Kak;
 use tokio::runtime::Builder;
+use tokio::task::JoinError;
 use tokio::task::JoinSet;
 
 use config::Config;
@@ -35,12 +38,18 @@ fn main() -> Result<()> {
 
     let plugins = config
         .parse()
-        .context(format!("couldn't parse {}", config.file.to_str().unwrap()))?;
+        .context(&format!("couldn't parse {}", config.file.to_str().unwrap()))?;
 
-    config.create_dirs()?;
-    let kak = config.create_kak_file_with_prelude()?;
+    config.create_dirs().context("couldn't setup Almoxarife")?;
+    let kak = config
+        .create_kak_file_with_prelude()
+        .context("couldn't configure plugins")?;
 
-    let runtime = Builder::new_current_thread().enable_io().build()?;
+    let runtime = Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .context("runtime didn't start")?;
+
     runtime.block_on(manage_plugins(plugins, kak))
 }
 
@@ -91,7 +100,7 @@ async fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak) -> Result<()> {
 
             Err(error) => {
                 println!("{:>20} {}", error.plugin(), "failed".color(Colors::RedFg));
-                errors.push(error.to_string());
+                errors.push(error);
             }
         }
     }
@@ -105,8 +114,73 @@ async fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak) -> Result<()> {
 
     if !errors.is_empty() {
         eprintln!();
-        Err(anyhow!("\n  {}", errors.join("\n  ")))
+        Err(Error::Plugins(errors))
     } else {
         Ok(())
+    }
+}
+
+enum Error {
+    Context {
+        error: Box<dyn error::Error>,
+        context: String,
+    },
+    Plugins(Vec<plugin::Error>),
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Context { error, context } => write!(f, "{}: {}", context, error),
+
+            Error::Plugins(errors) => {
+                let messages: Vec<_> = errors.into_iter().map(|e| e.to_string()).collect();
+                write!(f, "\n  {}", messages.join("\n  "))
+            }
+        }
+    }
+}
+
+impl Debug for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl error::Error for Error {}
+
+impl From<JoinError> for Error {
+    fn from(error: JoinError) -> Self {
+        Error::Context {
+            error: Box::new(error),
+            context: "jobs couldn't be collected".to_string(),
+        }
+    }
+}
+
+impl From<config::Error> for Error {
+    fn from(error: config::Error) -> Self {
+        Error::Context {
+            error: Box::new(error),
+            context: "couldn't setup plugins".to_string(),
+        }
+    }
+}
+
+type Result<A> = result::Result<A, Error>;
+
+trait Context<A> {
+    fn context(self, message: &str) -> Result<A>;
+}
+
+impl<A, E: error::Error + 'static> Context<A> for result::Result<A, E> {
+    fn context(self, message: &str) -> Result<A> {
+        match self {
+            Ok(a) => Ok(a),
+            Err(e) => Err(Error::Context {
+                error: Box::new(e),
+                context: message.to_string(),
+            }),
+        }
     }
 }
