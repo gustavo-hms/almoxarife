@@ -2,7 +2,9 @@ use colorized::Color;
 use colorized::Colors;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::error;
 use std::fmt::Display;
+use std::fmt::Formatter;
 use std::os::unix;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -11,34 +13,48 @@ use tokio::process::Command;
 
 use crate::config::Config;
 
+type Name = String;
+type Message = String;
+
 #[derive(Debug)]
 pub enum Error {
-    Clone { name: String, message: String },
-    Pull { name: String, message: String },
-    Link { name: String, message: String },
+    Clone(Name, Message),
+    Pull(Name, Message),
+    Link(Name, Message),
 }
 
 impl Error {
     pub fn plugin(&self) -> &str {
         match self {
-            Error::Clone { name, .. } => name,
-            Error::Pull { name, .. } => name,
-            Error::Link { name, .. } => name,
+            Error::Clone(name, _) => name,
+            Error::Pull(name, _) => name,
+            Error::Link(name, _) => name,
         }
     }
+}
 
-    pub fn error(&self) -> String {
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Clone { name, message } => {
-                format!("{}: could not clone: {message}", name.color(Colors::RedFg))
+            Error::Clone(name, message) => {
+                write!(
+                    f,
+                    "{}: could not clone: {message}",
+                    name.color(Colors::RedFg)
+                )
             }
 
-            Error::Pull { name, message } => {
-                format!("{}: could not update: {message}", name.color(Colors::RedFg))
+            Error::Pull(name, message) => {
+                write!(
+                    f,
+                    "{}: could not update: {message}",
+                    name.color(Colors::RedFg)
+                )
             }
 
-            Error::Link { name, message } => {
-                format!(
+            Error::Link(name, message) => {
+                write!(
+                    f,
                     "{}: could not activate: {message}",
                     name.color(Colors::RedFg)
                 )
@@ -47,11 +63,7 @@ impl Error {
     }
 }
 
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.error())
-    }
-}
+impl error::Error for Error {}
 
 pub enum Status {
     Installed {
@@ -154,10 +166,10 @@ impl Plugin {
             (true, true) => Status::Local { name, config },
 
             (true, false) => {
-                return Err(Error::Link {
+                return Err(Error::Link(
                     name,
-                    message: format!("the path {} is empty", self.location),
-                })
+                    format!("the path {} is empty", self.location),
+                ))
             }
 
             (false, true) => match self.pull().await? {
@@ -177,10 +189,8 @@ impl Plugin {
 
     async fn symlink(&self) -> Result<(), Error> {
         if !self.disabled {
-            unix::fs::symlink(&self.repository_path, &self.link_path).map_err(|e| Error::Link {
-                name: self.name.clone(),
-                message: e.to_string(),
-            })?;
+            unix::fs::symlink(&self.repository_path, &self.link_path)
+                .map_err(|e| Error::Link(self.name.clone(), e.to_string()))?;
         }
 
         Ok(())
@@ -197,17 +207,14 @@ impl Plugin {
             .stderr(Stdio::null())
             .status()
             .await
-            .map_err(|e| Error::Clone {
-                name: self.name.clone(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| Error::Clone(self.name.clone(), e.to_string()))?;
 
         match status.code() {
             None | Some(0) => Ok(()),
-            Some(code) => Err(Error::Clone {
-                name: self.name.clone(),
-                message: format!("git exited with status {}", code),
-            }),
+            Some(code) => Err(Error::Clone(
+                self.name.clone(),
+                format!("git exited with status {}", code),
+            )),
         }
     }
 
@@ -221,17 +228,14 @@ impl Plugin {
             .stderr(Stdio::null())
             .status()
             .await
-            .map_err(|e| Error::Pull {
-                name: self.name.clone(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| Error::Pull(self.name.clone(), e.to_string()))?;
 
         if let Some(code) = status.code() {
             if code != 0 {
-                return Err(Error::Pull {
-                    name: self.name.clone(),
-                    message: format!("git exited with status {}", code),
-                });
+                return Err(Error::Pull(
+                    self.name.clone(),
+                    format!("git exited with status {}", code),
+                ));
             }
         }
 
