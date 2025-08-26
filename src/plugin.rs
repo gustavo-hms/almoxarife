@@ -5,11 +5,11 @@ use std::collections::HashMap;
 use std::error;
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::fs;
 use std::os::unix;
 use std::path::PathBuf;
+use std::process::Command;
 use std::process::Stdio;
-use tokio::fs;
-use tokio::process::Command;
 
 use crate::config::Config;
 
@@ -154,15 +154,15 @@ impl Plugin {
         }
     }
 
-    async fn repository_path_exists(&self) -> bool {
-        fs::metadata(&self.repository_path).await.is_ok()
+    fn repository_path_exists(&self) -> bool {
+        fs::metadata(&self.repository_path).is_ok()
     }
 
-    pub async fn update(self) -> Result<Status, Error> {
+    pub fn update(self) -> Result<Status, Error> {
         let config = self.config();
         let name = self.name.clone();
 
-        let status = match (self.is_local, self.repository_path_exists().await) {
+        let status = match (self.is_local, self.repository_path_exists()) {
             (true, true) => Status::Local { name, config },
 
             (true, false) => {
@@ -172,22 +172,22 @@ impl Plugin {
                 ))
             }
 
-            (false, true) => match self.pull().await? {
+            (false, true) => match self.pull()? {
                 None => Status::Unchanged { name, config },
                 Some(log) => Status::Updated { name, log, config },
             },
 
             (false, false) => {
-                self.clone_repo(&self.location).await?;
+                self.clone_repo(&self.location)?;
                 Status::Installed { name, config }
             }
         };
 
-        self.symlink().await?;
+        self.symlink()?;
         Ok(status)
     }
 
-    async fn symlink(&self) -> Result<(), Error> {
+    fn symlink(&self) -> Result<(), Error> {
         if !self.disabled {
             unix::fs::symlink(&self.repository_path, &self.link_path)
                 .map_err(|e| Error::Link(self.name.clone(), e.to_string()))?;
@@ -196,7 +196,7 @@ impl Plugin {
         Ok(())
     }
 
-    async fn clone_repo(&self, url: &str) -> Result<(), Error> {
+    fn clone_repo(&self, url: &str) -> Result<(), Error> {
         let location = format!("{url}.git");
 
         let status = Command::new("git")
@@ -206,7 +206,6 @@ impl Plugin {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .await
             .map_err(|e| Error::Clone(self.name.clone(), e.to_string()))?;
 
         match status.code() {
@@ -218,8 +217,8 @@ impl Plugin {
         }
     }
 
-    async fn pull(&self) -> Result<Option<String>, Error> {
-        let old_revision = self.current_revision().await;
+    fn pull(&self) -> Result<Option<String>, Error> {
+        let old_revision = self.current_revision();
 
         let status = Command::new("git")
             .arg("pull")
@@ -227,7 +226,6 @@ impl Plugin {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .await
             .map_err(|e| Error::Pull(self.name.clone(), e.to_string()))?;
 
         if let Some(code) = status.code() {
@@ -240,8 +238,8 @@ impl Plugin {
         }
 
         if let Some(old) = old_revision {
-            if let Some(new) = self.current_revision().await {
-                return Ok(self.log(old, new).await);
+            if let Some(new) = self.current_revision() {
+                return Ok(self.log(old, new));
             }
         }
 
@@ -252,12 +250,11 @@ impl Plugin {
         format!("try %[ require-module {} ]\n{}\n", self.name, self.config)
     }
 
-    async fn current_revision(&self) -> Option<String> {
+    fn current_revision(&self) -> Option<String> {
         let output = Command::new("git")
             .current_dir(&self.repository_path)
             .args(["rev-parse", "HEAD"])
             .output()
-            .await
             .ok()?;
 
         let mut revision = String::from_utf8_lossy(&output.stdout).to_string();
@@ -265,7 +262,7 @@ impl Plugin {
         Some(revision)
     }
 
-    async fn log(&self, old_revision: String, new_revision: String) -> Option<String> {
+    fn log(&self, old_revision: String, new_revision: String) -> Option<String> {
         if old_revision == new_revision {
             return None;
         }
@@ -276,7 +273,6 @@ impl Plugin {
             .current_dir(&self.repository_path)
             .args(["log", &range, "--oneline", "--no-decorate", "--reverse"])
             .output()
-            .await
             .ok()?;
 
         Some(String::from_utf8_lossy(&output.stdout).to_string())

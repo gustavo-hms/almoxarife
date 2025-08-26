@@ -3,16 +3,16 @@ use std::error;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::mem;
 use std::process;
 use std::process::Command;
 use std::result;
+use std::sync::mpsc;
+use std::thread;
 
 use colorized::Color;
 use colorized::Colors;
 use config::Kak;
-use tokio::runtime::Builder;
-use tokio::task::JoinError;
-use tokio::task::JoinSet;
 
 use config::Config;
 use plugin::Plugin;
@@ -45,65 +45,70 @@ fn main() -> Result<()> {
         .create_kak_file_with_prelude()
         .context("couldn't configure plugins")?;
 
-    let runtime = Builder::new_current_thread()
-        .enable_io()
-        .build()
-        .context("runtime didn't start")?;
-
-    runtime.block_on(manage_plugins(plugins, kak))
+    manage_plugins(plugins, kak)
 }
 
-async fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak) -> Result<()> {
-    let mut set = JoinSet::new();
-
-    for plugin in plugins {
-        set.spawn(plugin.update());
-    }
-
+fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak) -> Result<()> {
+    let (sender, receiver) = mpsc::channel();
     let mut errors = Vec::new();
     let mut changes = Vec::new();
 
-    while let Some(result) = set.join_next().await {
-        match result? {
-            Ok(Status::Installed { name, config }) => {
-                kak.write(config.as_bytes())?;
-                println!("{name:>20} {}", "installed".color(Colors::GreenFg))
-            }
+    thread::scope(|s| -> Result<()> {
+        for plugin in plugins {
+            let sender = sender.clone();
 
-            Ok(Status::Unchanged { name, config }) => {
-                kak.write(config.as_bytes())?;
-                println!("{name:>20} {}", "unchanged".color(Colors::BlueFg))
-            }
+            s.spawn(move || {
+                let result = plugin.update();
+                sender.send(result)
+            });
+        }
 
-            Ok(Status::Updated { name, log, config }) => {
-                kak.write(config.as_bytes())?;
-                println!("{name:>20} {}", "updated".color(Colors::GreenFg));
+        mem::drop(sender);
 
-                let message: String = log
-                    .split("\n")
-                    .map(|line| match line.split_once(" ") {
-                        Some((revision, message)) => {
-                            format!("{} {message}\n", revision.color(Colors::BrightBlackFg))
-                        }
+        while let Ok(result) = receiver.recv() {
+            match result {
+                Ok(Status::Installed { name, config }) => {
+                    kak.write(config.as_bytes())?;
+                    println!("{name:>20} {}", "installed".color(Colors::GreenFg))
+                }
 
-                        None => line.to_string(),
-                    })
-                    .collect();
+                Ok(Status::Unchanged { name, config }) => {
+                    kak.write(config.as_bytes())?;
+                    println!("{name:>20} {}", "unchanged".color(Colors::BlueFg))
+                }
 
-                changes.push(format!("{}:\n{message}", name.color(Colors::GreenFg)));
-            }
+                Ok(Status::Updated { name, log, config }) => {
+                    kak.write(config.as_bytes())?;
+                    println!("{name:>20} {}", "updated".color(Colors::GreenFg));
 
-            Ok(Status::Local { name, config }) => {
-                kak.write(config.as_bytes())?;
-                println!("{name:>20} {}", "local".color(Colors::YellowFg))
-            }
+                    let message: String = log
+                        .split("\n")
+                        .map(|line| match line.split_once(" ") {
+                            Some((revision, message)) => {
+                                format!("{} {message}\n", revision.color(Colors::BrightBlackFg))
+                            }
 
-            Err(error) => {
-                println!("{:>20} {}", error.plugin(), "failed".color(Colors::RedFg));
-                errors.push(error);
+                            None => line.to_string(),
+                        })
+                        .collect();
+
+                    changes.push(format!("{}:\n{message}", name.color(Colors::GreenFg)));
+                }
+
+                Ok(Status::Local { name, config }) => {
+                    kak.write(config.as_bytes())?;
+                    println!("{name:>20} {}", "local".color(Colors::YellowFg))
+                }
+
+                Err(error) => {
+                    println!("{:>20} {}", error.plugin(), "failed".color(Colors::RedFg));
+                    errors.push(error);
+                }
             }
         }
-    }
+
+        Ok(())
+    })?;
 
     kak.close()?;
 
@@ -148,15 +153,6 @@ impl Debug for Error {
 }
 
 impl error::Error for Error {}
-
-impl From<JoinError> for Error {
-    fn from(error: JoinError) -> Self {
-        Error::Context {
-            error: Box::new(error),
-            context: "jobs couldn't be collected".to_string(),
-        }
-    }
-}
 
 impl From<config::Error> for Error {
     fn from(error: config::Error) -> Self {
