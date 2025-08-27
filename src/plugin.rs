@@ -130,7 +130,7 @@ pub struct Plugin {
 fn is_local(location: &str) -> bool {
     !location.starts_with("https://")
         && !location.starts_with("http://")
-        && !location.starts_with("git://")
+        && !location.starts_with("git@")
 }
 
 impl Plugin {
