@@ -72,6 +72,7 @@ impl<A, E: error::Error> Context<A> for result::Result<A, E> {
     }
 }
 
+#[derive(Default)]
 pub struct Config {
     /// The directory where plugins' repos will be checked out (usually `~/.local/share/almoxarife`).
     pub almoxarife_data_dir: PathBuf,
@@ -194,7 +195,7 @@ impl Kak {
         self.0.write_all(data).context("error writing kak file")
     }
 
-    pub fn close(&mut self) -> Result<()> {
+    pub fn close(mut self) -> Result<()> {
         self.0
             .write_all("🧺".as_bytes())
             .context("error writing kak file")
