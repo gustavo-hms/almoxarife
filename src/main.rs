@@ -13,14 +13,14 @@ use std::thread;
 
 use colorized::Color;
 use colorized::Colors;
-use config::Kak;
+use setup::Kak;
 
-use config::Setup;
 use plugin::Plugin;
 use plugin::Status;
+use setup::Setup;
 
-mod config;
 mod plugin;
+mod setup;
 
 fn main() -> Result<()> {
     let setup = Setup::new();
@@ -160,8 +160,8 @@ impl Debug for Error {
 
 impl error::Error for Error {}
 
-impl From<config::Error> for Error {
-    fn from(error: config::Error) -> Self {
+impl From<setup::Error> for Error {
+    fn from(error: setup::Error) -> Self {
         Error::Context {
             error: Box::new(error),
             context: "couldn't setup plugins".to_string(),

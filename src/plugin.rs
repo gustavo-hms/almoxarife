@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
-use crate::config::Setup;
+use crate::setup::Setup;
 
 type Name = String;
 type Message = String;
