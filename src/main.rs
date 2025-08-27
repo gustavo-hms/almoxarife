@@ -3,6 +3,7 @@ use std::error;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::fs::File;
 use std::mem;
 use std::process;
 use std::process::Command;
@@ -14,7 +15,7 @@ use colorized::Color;
 use colorized::Colors;
 use config::Kak;
 
-use config::Config;
+use config::Setup;
 use plugin::Plugin;
 use plugin::Status;
 
@@ -22,11 +23,11 @@ mod config;
 mod plugin;
 
 fn main() -> Result<()> {
-    let config = Config::new();
+    let setup = Setup::new();
 
     if matches!(env::args().nth(1), Some(arg) if arg == "config") {
         let status = Command::new("kak")
-            .arg(&config.file)
+            .arg(&setup.almoxarife_yaml_path)
             .status()
             .context("couldn't run Kakoune")?;
 
@@ -36,19 +37,24 @@ fn main() -> Result<()> {
         }
     }
 
-    let plugins = config
-        .parse()
-        .context(&format!("couldn't parse {}", config.file.to_str().unwrap()))?;
+    let config = setup
+        .open_config_file()
+        .context("couldn't open almoxarife.yaml")?;
 
-    config.create_dirs().context("couldn't setup Almoxarife")?;
-    let kak = config
+    let plugins = config.parse_yaml().context(&format!(
+        "couldn't parse {}",
+        setup.almoxarife_yaml_path.to_str().unwrap()
+    ))?;
+
+    setup.create_dirs().context("couldn't setup Almoxarife")?;
+    let kak = setup
         .create_kak_file_with_prelude()
         .context("couldn't configure plugins")?;
 
     manage_plugins(plugins, kak)
 }
 
-fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak) -> Result<()> {
+fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak<File>) -> Result<()> {
     let (sender, receiver) = mpsc::channel();
     let mut errors = Vec::new();
     let mut changes = Vec::new();

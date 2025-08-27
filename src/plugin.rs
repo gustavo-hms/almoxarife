@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
-use crate::config::Config;
+use crate::config::Setup;
 
 type Name = String;
 type Message = String;
@@ -97,7 +97,7 @@ pub struct PluginTree {
 }
 
 impl PluginTree {
-    pub fn plugins(&self, name: String, config: &Config) -> Vec<Plugin> {
+    pub fn plugins(&self, name: String, setup: &Setup) -> Vec<Plugin> {
         if self.disabled {
             return Vec::new();
         }
@@ -105,9 +105,9 @@ impl PluginTree {
         let children = self
             .children
             .iter()
-            .flat_map(|(child_name, child)| child.plugins(child_name.clone(), config));
+            .flat_map(|(child_name, child)| child.plugins(child_name.clone(), setup));
 
-        let mut plugins = vec![Plugin::new(name, self, config)];
+        let mut plugins = vec![Plugin::new(name, self, setup)];
 
         for child in children {
             plugins.push(child);
@@ -134,13 +134,13 @@ fn is_local(location: &str) -> bool {
 }
 
 impl Plugin {
-    fn new(name: String, node: &PluginTree, config: &Config) -> Plugin {
-        let link_path = config.autoload_plugins_dir.join(&name);
+    fn new(name: String, node: &PluginTree, setup: &Setup) -> Plugin {
+        let link_path = setup.autoload_plugins_dir.join(&name);
 
         let (is_local, repository_path) = if is_local(&node.location) {
             (true, PathBuf::from(&node.location))
         } else {
-            (false, config.almoxarife_data_dir.join(&name))
+            (false, setup.almoxarife_data_dir.join(&name))
         };
 
         Plugin {

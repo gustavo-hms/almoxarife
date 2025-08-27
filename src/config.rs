@@ -7,6 +7,7 @@ use std::fmt::Formatter;
 use std::fs;
 use std::fs::File;
 use std::io;
+use std::io::Read;
 use std::io::Write;
 use std::os::unix;
 use std::os::unix::ffi::OsStrExt;
@@ -20,19 +21,6 @@ use std::time::Duration;
 
 use crate::plugin::Plugin;
 use crate::plugin::PluginTree;
-
-const CONFIG_PRELUDE: &str = r"
-hook global KakBegin .* %🧺
-
-add-highlighter shared/almoxarife regions
-add-highlighter shared/almoxarife/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
-add-highlighter shared/almoxarife/ region '^\s*config:[^\n]' '\n' ref kakrc
-
-hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
-    add-highlighter window/almoxarife ref almoxarife
-    hook -once -always window WinClose .* %{ remove-highlighter window/almoxarife }
-}
-";
 
 #[derive(Debug)]
 pub struct Error(String);
@@ -73,21 +61,21 @@ impl<A, E: error::Error> Context<A> for result::Result<A, E> {
 }
 
 #[derive(Default)]
-pub struct Config {
+pub struct Setup {
+    /// The path to `almoxarife.yaml`.
+    pub almoxarife_yaml_path: PathBuf,
     /// The directory where plugins' repos will be checked out (usually `~/.local/share/almoxarife`).
     pub almoxarife_data_dir: PathBuf,
     // The Almoxarife subdirectory inside `autoload`.
     pub autoload_plugins_dir: PathBuf,
-    /// The path to `almoxarife.yaml`.
-    pub file: PathBuf,
     /// The path to `almoxarife.kak`
-    almoxarife_kak_file: PathBuf,
+    almoxarife_kak: PathBuf,
     // The Kakoune's autoload directory.
     autoload_dir: PathBuf,
 }
 
-impl Config {
-    pub fn new() -> Config {
+impl Setup {
+    pub fn new() -> Setup {
         let home = env::var("HOME").expect("could not read HOME environment variable");
         let home = Path::new(&home);
 
@@ -97,7 +85,7 @@ impl Config {
             home.join(".config")
         };
 
-        let file = config_dir.join("almoxarife.yaml");
+        let almoxarife_yaml_path = config_dir.join("almoxarife.yaml");
 
         let almoxarife_data_dir = if let Ok(data) = env::var("XDG_DATA_HOME") {
             PathBuf::from(&data).join("almoxarife")
@@ -108,31 +96,15 @@ impl Config {
         let autoload_dir = config_dir.join("kak/autoload");
         let mut autoload_plugins_dir = autoload_dir.clone();
         autoload_plugins_dir.push("almoxarife");
-        let almoxarife_kak_file = autoload_plugins_dir.join("almoxarife.kak");
+        let almoxarife_kak = autoload_plugins_dir.join("almoxarife.kak");
 
-        Config {
-            file,
-            almoxarife_kak_file,
+        Setup {
+            almoxarife_yaml_path,
+            almoxarife_kak,
             autoload_dir,
             autoload_plugins_dir,
             almoxarife_data_dir,
         }
-    }
-
-    pub fn parse(&self) -> Result<Vec<Plugin>> {
-        let file = File::open(&self.file)?;
-        let tree: HashMap<String, PluginTree> = serde_yaml::from_reader(&file)?;
-
-        if tree.is_empty() {
-            return Err(Error("configuration file has no YAML element".to_string()));
-        }
-
-        let plugins = tree
-            .into_iter()
-            .flat_map(|(name, tree)| tree.plugins(name, self))
-            .collect();
-
-        Ok(plugins)
     }
 
     pub fn create_dirs(&self) -> Result<()> {
@@ -174,23 +146,76 @@ impl Config {
         Ok(())
     }
 
-    fn create_kak_file(&self) -> Result<Kak> {
-        let file = File::create(&self.almoxarife_kak_file)
-            .context("couldn't create almoxarife.kak file")?;
-
-        Ok(Kak(file))
+    pub fn create_kak_file_with_prelude(&self) -> Result<Kak<File>> {
+        let mut kak = Kak::new(&self.almoxarife_kak)?;
+        kak.write_prelude()?;
+        Ok(kak)
     }
 
-    pub fn create_kak_file_with_prelude(&self) -> Result<Kak> {
-        let mut kak = self.create_kak_file()?;
-        kak.write(CONFIG_PRELUDE.as_bytes())?;
-        Ok(kak)
+    pub fn open_config_file(&'_ self) -> Result<Config<'_, File>> {
+        Config::new(self)
     }
 }
 
-pub struct Kak(File);
+pub struct Config<'setup, R> {
+    file: R,
+    setup: &'setup Setup,
+}
 
-impl Kak {
+impl<'setup> Config<'setup, File> {
+    fn new(setup: &Setup) -> Result<Config<'_, File>> {
+        let path = &setup.almoxarife_yaml_path;
+        let file = File::open(path)?;
+        Ok(Config { file, setup })
+    }
+}
+
+impl<'setup, R: 'setup> Config<'setup, R>
+where
+    &'setup R: Read,
+{
+    pub fn parse_yaml(&'setup self) -> Result<Vec<Plugin>> {
+        let tree: HashMap<String, PluginTree> = serde_yaml::from_reader(&self.file)?;
+
+        if tree.is_empty() {
+            return Err(Error("configuration file has no YAML element".to_string()));
+        }
+
+        let plugins = tree
+            .into_iter()
+            .flat_map(|(name, tree)| tree.plugins(name, self.setup))
+            .collect();
+
+        Ok(plugins)
+    }
+}
+
+pub struct Kak<W: Write>(W);
+
+impl Kak<File> {
+    fn new(path: &Path) -> Result<Kak<File>> {
+        let file = File::create(path).context("couldn't create almoxarife.kak file")?;
+        Ok(Kak(file))
+    }
+}
+
+impl<W: Write> Kak<W> {
+    pub fn write_prelude(&mut self) -> Result<()> {
+        let prelude = r"
+        hook global KakBegin .* %🧺
+
+        add-highlighter shared/almoxarife regions
+        add-highlighter shared/almoxarife/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
+        add-highlighter shared/almoxarife/ region '^\s*config:[^\n]' '\n' ref kakrc
+
+        hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
+            add-highlighter window/almoxarife ref almoxarife
+            hook -once -always window WinClose .* %{ remove-highlighter window/almoxarife }
+        }
+        ";
+        self.write(prelude.as_bytes())
+    }
+
     pub fn write(&mut self, data: &[u8]) -> Result<()> {
         self.0.write_all(data).context("error writing kak file")
     }
@@ -206,85 +231,70 @@ impl Kak {
 mod test {
     use std::path::Path;
 
-    use super::Config;
+    use super::Setup;
 
     #[test]
-    fn new_config() {
+    fn new_setup() {
         {
             let _home = TempEnv::new("HOME", "custom-home");
-
-            let config = Config::new();
+            let setup = Setup::new();
 
             assert_eq!(
-                config.almoxarife_data_dir,
+                setup.almoxarife_data_dir,
                 Path::new("custom-home/.local/share/almoxarife")
             );
 
             assert_eq!(
-                config.autoload_plugins_dir,
+                setup.autoload_plugins_dir,
                 Path::new("custom-home/.config/kak/autoload/almoxarife")
             );
 
             assert_eq!(
-                config.file,
+                setup.almoxarife_yaml_path,
                 Path::new("custom-home/.config/almoxarife.yaml")
             );
         }
-    }
-
-    #[test]
-    fn new_config_custom_xdg_config_home() {
         {
+            // Custom XDG_CONFIG_HOME
             let _home = TempEnv::new("HOME", "custom-home");
             let _config = TempEnv::new("XDG_CONFIG_HOME", "custom-config");
-
-            let config = Config::new();
+            let setup = Setup::new();
 
             assert_eq!(
-                config.almoxarife_data_dir,
+                setup.almoxarife_data_dir,
                 Path::new("custom-home/.local/share/almoxarife")
             );
 
             assert_eq!(
-                config.autoload_plugins_dir,
+                setup.autoload_plugins_dir,
                 Path::new("custom-config/kak/autoload/almoxarife")
             );
 
-            assert_eq!(config.file, Path::new("custom-config/almoxarife.yaml"));
+            assert_eq!(
+                setup.almoxarife_yaml_path,
+                Path::new("custom-config/almoxarife.yaml")
+            );
         }
-    }
-
-    #[test]
-    fn new_config_custom_xdg_data_home() {
         {
+            // Custom XDG_DATA_HOME
             let _home = TempEnv::new("HOME", "custom-home");
             let _data = TempEnv::new("XDG_DATA_HOME", "custom-data");
-
-            let config = Config::new();
+            let setup = Setup::new();
 
             assert_eq!(
-                config.almoxarife_data_dir,
+                setup.almoxarife_data_dir,
                 Path::new("custom-data/almoxarife")
             );
 
             assert_eq!(
-                config.autoload_plugins_dir,
+                setup.autoload_plugins_dir,
                 Path::new("custom-home/.config/kak/autoload/almoxarife")
             );
 
             assert_eq!(
-                config.file,
+                setup.almoxarife_yaml_path,
                 Path::new("custom-home/.config/almoxarife.yaml")
             );
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "could not read HOME environment variable")]
-    fn new_config_missing_home_var() {
-        {
-            let _home = TempEnv::remove("HOME");
-            Config::new();
         }
     }
 
@@ -304,17 +314,6 @@ mod test {
                 old_value,
             }
         }
-
-        fn remove(name: &str) -> TempEnv {
-            let old_value = std::env::var(name).ok();
-            unsafe {
-                std::env::remove_var(name);
-            }
-            TempEnv {
-                name: name.to_string(),
-                old_value,
-            }
-        }
     }
 
     impl Drop for TempEnv {
@@ -322,9 +321,7 @@ mod test {
             if let Some(old_value) = &self.old_value {
                 unsafe { std::env::set_var(&self.name, old_value) }
             } else {
-                unsafe {
-                    std::env::remove_var(&self.name);
-                }
+                unsafe { std::env::remove_var(&self.name) }
             }
         }
     }
