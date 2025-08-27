@@ -32,7 +32,7 @@ fn main() -> Result<()> {
 
         match status.code() {
             None | Some(0) => (),
-            Some(code) => process::exit(code),
+            Some(_) => process::exit(1),
         }
     }
 

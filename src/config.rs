@@ -200,3 +200,125 @@ impl Kak {
             .context("error writing kak file")
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::path::Path;
+
+    use super::Config;
+
+    #[test]
+    fn new_config() {
+        let _home = TempEnv::new("HOME", "custom-home");
+
+        let config = Config::new();
+
+        assert_eq!(
+            config.almoxarife_data_dir,
+            Path::new("custom-home/.local/share/almoxarife")
+        );
+
+        assert_eq!(
+            config.autoload_plugins_dir,
+            Path::new("custom-home/.config/kak/autoload/almoxarife")
+        );
+
+        assert_eq!(
+            config.file,
+            Path::new("custom-home/.config/almoxarife.yaml")
+        );
+    }
+
+    #[test]
+    fn new_config_custom_xdg_config_home() {
+        let _home = TempEnv::new("HOME", "custom-home");
+        let _config = TempEnv::new("XDG_CONFIG_HOME", "custom-config");
+
+        let config = Config::new();
+
+        assert_eq!(
+            config.almoxarife_data_dir,
+            Path::new("custom-home/.local/share/almoxarife")
+        );
+
+        assert_eq!(
+            config.autoload_plugins_dir,
+            Path::new("custom-config/kak/autoload/almoxarife")
+        );
+
+        assert_eq!(config.file, Path::new("custom-config/almoxarife.yaml"));
+    }
+
+    #[test]
+    fn new_config_custom_xdg_data_home() {
+        let _home = TempEnv::new("HOME", "custom-home");
+        let _data = TempEnv::new("XDG_DATA_HOME", "custom-data");
+
+        let config = Config::new();
+
+        assert_eq!(
+            config.almoxarife_data_dir,
+            Path::new("custom-data/almoxarife")
+        );
+
+        assert_eq!(
+            config.autoload_plugins_dir,
+            Path::new("custom-home/.config/kak/autoload/almoxarife")
+        );
+
+        assert_eq!(
+            config.file,
+            Path::new("custom-home/.config/almoxarife.yaml")
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "could not read HOME environment variable")]
+    fn new_config_missing_home_var() {
+        let _home = TempEnv::remove("HOME");
+        Config::new();
+    }
+
+    struct TempEnv {
+        name: String,
+        old_value: Option<String>,
+    }
+
+    impl TempEnv {
+        fn new(name: &str, value: &str) -> TempEnv {
+            let old_value = std::env::var(name).ok();
+            unsafe {
+                std::env::set_var(name, value);
+            }
+            TempEnv {
+                name: name.to_string(),
+                old_value,
+            }
+        }
+
+        fn remove(name: &str) -> TempEnv {
+            let old_value = std::env::var(name).ok();
+            unsafe {
+                std::env::remove_var(name);
+            }
+            TempEnv {
+                name: name.to_string(),
+                old_value,
+            }
+        }
+    }
+
+    impl Drop for TempEnv {
+        fn drop(&mut self) {
+            if let Some(old_value) = &self.old_value {
+                dbg!(&old_value, &self.name);
+                unsafe { std::env::set_var(&self.name, old_value) }
+            } else {
+                dbg!(&self.name);
+                unsafe {
+                    std::env::remove_var(&self.name);
+                }
+            }
+        }
+    }
+}
