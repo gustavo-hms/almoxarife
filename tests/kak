@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mkdir -p /tmp/almoxarife-rc/rc
+printf "/tmp/almoxarife-rc"

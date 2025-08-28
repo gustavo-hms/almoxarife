@@ -64,7 +64,8 @@ impl<A, E: error::Error> Context<A> for result::Result<A, E> {
 pub struct Setup {
     /// The path to `almoxarife.yaml`.
     pub almoxarife_yaml_path: PathBuf,
-    /// The directory where plugins' repos will be checked out (usually `~/.local/share/almoxarife`).
+    /// The directory where plugins' repos will be checked out (usually
+    /// `~/.local/share/almoxarife`).
     pub almoxarife_data_dir: PathBuf,
     // The Almoxarife subdirectory inside `autoload`.
     pub autoload_plugins_dir: PathBuf,
@@ -72,6 +73,8 @@ pub struct Setup {
     almoxarife_kak: PathBuf,
     // The Kakoune's autoload directory.
     autoload_dir: PathBuf,
+    // Custom environment variables tue setup process will consider.
+    env: HashMap<String, String>,
 }
 
 impl Setup {
@@ -104,6 +107,7 @@ impl Setup {
             autoload_dir,
             autoload_plugins_dir,
             almoxarife_data_dir,
+            env: HashMap::new(),
         }
     }
 
@@ -133,6 +137,7 @@ impl Setup {
             .args(["-d", "-s", "almoxarife", "-E"])
             .arg("echo -to-file /dev/stdout %val[runtime]")
             .stdout(Stdio::piped())
+            .envs(&self.env)
             .spawn()?;
 
         thread::sleep(Duration::from_millis(100));
@@ -229,7 +234,12 @@ impl<W: Write> Kak<W> {
 
 #[cfg(test)]
 mod test {
+    use std::env;
+    use std::fs;
     use std::path::Path;
+    use std::path::PathBuf;
+
+    use tempfile::TempDir;
 
     use super::Setup;
 
@@ -298,6 +308,49 @@ mod test {
         }
     }
 
+    #[test]
+    fn create_dirs() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut autoload_dir = temp_dir.path().to_path_buf();
+        autoload_dir.push("autoload");
+
+        let mut autoload_plugins_dir = autoload_dir.clone();
+        autoload_plugins_dir.push("almoxarife");
+
+        let mut almoxarife_data_dir = temp_dir.path().to_path_buf();
+        almoxarife_data_dir.push("data");
+
+        let mut executables_dir = project_path();
+        executables_dir.push("tests");
+
+        let path = std::env::var("PATH").unwrap();
+
+        let setup = Setup {
+            almoxarife_data_dir: almoxarife_data_dir.clone(),
+            autoload_dir: autoload_dir.clone(),
+            autoload_plugins_dir: autoload_plugins_dir.clone(),
+            env: [(
+                "PATH".into(),
+                format!("{}:{path}", executables_dir.to_string_lossy()),
+            )]
+            .into(),
+            ..Default::default()
+        };
+
+        setup.create_dirs().unwrap();
+
+        assert!(autoload_dir.is_dir());
+        assert!(autoload_plugins_dir.is_dir());
+        assert!(almoxarife_data_dir.is_dir());
+
+        let mut runtime_dir = autoload_dir.clone();
+        runtime_dir.push("rc");
+
+        assert!(runtime_dir.is_symlink());
+        assert!(runtime_dir.metadata().is_ok());
+    }
+
     struct TempEnv {
         name: String,
         old_value: Option<String>,
@@ -324,5 +377,22 @@ mod test {
                 unsafe { std::env::remove_var(&self.name) }
             }
         }
+    }
+
+    fn project_path() -> PathBuf {
+        let path = env::current_dir().unwrap();
+        let mut path_ancestors = path.as_path().ancestors();
+
+        while let Some(p) = path_ancestors.next() {
+            if fs::read_dir(p)
+                .unwrap()
+                .into_iter()
+                .any(|p| p.unwrap().file_name() == "Cargo.toml")
+            {
+                return p.into();
+            }
+        }
+
+        panic!("could not find project path");
     }
 }
