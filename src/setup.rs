@@ -74,15 +74,24 @@ pub struct Setup {
     // The Kakoune's autoload directory.
     autoload_dir: PathBuf,
     // Custom environment variables tue setup process will consider.
-    env: HashMap<String, String>,
+    env: HashMap<&'static str, String>,
+}
+
+fn get_var(environment: &HashMap<&str, String>, var: &str) -> Option<String> {
+    environment.get(var).cloned().or_else(|| env::var(var).ok())
 }
 
 impl Setup {
     pub fn new() -> Setup {
-        let home = env::var("HOME").expect("could not read HOME environment variable");
+        Setup::with_env(HashMap::new())
+    }
+
+    pub fn with_env(env: HashMap<&'static str, String>) -> Setup {
+        let home = get_var(&env, "HOME").expect("could not read HOME environment variable");
+
         let home = Path::new(&home);
 
-        let config_dir = if let Ok(config) = env::var("XDG_CONFIG_HOME") {
+        let config_dir = if let Some(config) = get_var(&env, "XDG_CONFIG_HOME") {
             PathBuf::from(&config)
         } else {
             home.join(".config")
@@ -90,7 +99,7 @@ impl Setup {
 
         let almoxarife_yaml_path = config_dir.join("almoxarife.yaml");
 
-        let almoxarife_data_dir = if let Ok(data) = env::var("XDG_DATA_HOME") {
+        let almoxarife_data_dir = if let Some(data) = get_var(&env, "XDG_DATA_HOME") {
             PathBuf::from(&data).join("almoxarife")
         } else {
             home.join(".local/share/almoxarife")
@@ -107,7 +116,7 @@ impl Setup {
             autoload_dir,
             autoload_plugins_dir,
             almoxarife_data_dir,
-            env: HashMap::new(),
+            env,
         }
     }
 
@@ -245,67 +254,74 @@ mod test {
 
     #[test]
     fn new_setup() {
-        {
-            let _home = TempEnv::new("HOME", "custom-home");
-            let setup = Setup::new();
+        let setup = Setup::with_env([("HOME", "custom-home".to_string())].into());
 
-            assert_eq!(
-                setup.almoxarife_data_dir,
-                Path::new("custom-home/.local/share/almoxarife")
-            );
+        assert_eq!(
+            setup.almoxarife_data_dir,
+            Path::new("custom-home/.local/share/almoxarife")
+        );
 
-            assert_eq!(
-                setup.autoload_plugins_dir,
-                Path::new("custom-home/.config/kak/autoload/almoxarife")
-            );
+        assert_eq!(
+            setup.autoload_plugins_dir,
+            Path::new("custom-home/.config/kak/autoload/almoxarife")
+        );
 
-            assert_eq!(
-                setup.almoxarife_yaml_path,
-                Path::new("custom-home/.config/almoxarife.yaml")
-            );
-        }
-        {
-            // Custom XDG_CONFIG_HOME
-            let _home = TempEnv::new("HOME", "custom-home");
-            let _config = TempEnv::new("XDG_CONFIG_HOME", "custom-config");
-            let setup = Setup::new();
+        assert_eq!(
+            setup.almoxarife_yaml_path,
+            Path::new("custom-home/.config/almoxarife.yaml")
+        );
+    }
 
-            assert_eq!(
-                setup.almoxarife_data_dir,
-                Path::new("custom-home/.local/share/almoxarife")
-            );
+    #[test]
+    fn new_setup_custom_xdg_config_home() {
+        let setup = Setup::with_env(
+            [
+                ("HOME", "custom-home".to_string()),
+                ("XDG_CONFIG_HOME", "custom-config".to_string()),
+            ]
+            .into(),
+        );
 
-            assert_eq!(
-                setup.autoload_plugins_dir,
-                Path::new("custom-config/kak/autoload/almoxarife")
-            );
+        assert_eq!(
+            setup.almoxarife_data_dir,
+            Path::new("custom-home/.local/share/almoxarife")
+        );
 
-            assert_eq!(
-                setup.almoxarife_yaml_path,
-                Path::new("custom-config/almoxarife.yaml")
-            );
-        }
-        {
-            // Custom XDG_DATA_HOME
-            let _home = TempEnv::new("HOME", "custom-home");
-            let _data = TempEnv::new("XDG_DATA_HOME", "custom-data");
-            let setup = Setup::new();
+        assert_eq!(
+            setup.autoload_plugins_dir,
+            Path::new("custom-config/kak/autoload/almoxarife")
+        );
 
-            assert_eq!(
-                setup.almoxarife_data_dir,
-                Path::new("custom-data/almoxarife")
-            );
+        assert_eq!(
+            setup.almoxarife_yaml_path,
+            Path::new("custom-config/almoxarife.yaml")
+        );
+    }
 
-            assert_eq!(
-                setup.autoload_plugins_dir,
-                Path::new("custom-home/.config/kak/autoload/almoxarife")
-            );
+    #[test]
+    fn new_setup_custom_xdg_data_home() {
+        let setup = Setup::with_env(
+            [
+                ("HOME", "custom-home".to_string()),
+                ("XDG_DATA_HOME", "custom-data".to_string()),
+            ]
+            .into(),
+        );
 
-            assert_eq!(
-                setup.almoxarife_yaml_path,
-                Path::new("custom-home/.config/almoxarife.yaml")
-            );
-        }
+        assert_eq!(
+            setup.almoxarife_data_dir,
+            Path::new("custom-data/almoxarife")
+        );
+
+        assert_eq!(
+            setup.autoload_plugins_dir,
+            Path::new("custom-home/.config/kak/autoload/almoxarife")
+        );
+
+        assert_eq!(
+            setup.almoxarife_yaml_path,
+            Path::new("custom-home/.config/almoxarife.yaml")
+        );
     }
 
     #[test]
@@ -331,7 +347,7 @@ mod test {
             autoload_dir: autoload_dir.clone(),
             autoload_plugins_dir: autoload_plugins_dir.clone(),
             env: [(
-                "PATH".into(),
+                "PATH",
                 format!("{}:{path}", executables_dir.to_string_lossy()),
             )]
             .into(),
@@ -349,34 +365,6 @@ mod test {
 
         assert!(runtime_dir.is_symlink());
         assert!(runtime_dir.metadata().is_ok());
-    }
-
-    struct TempEnv {
-        name: String,
-        old_value: Option<String>,
-    }
-
-    impl TempEnv {
-        fn new(name: &str, value: &str) -> TempEnv {
-            let old_value = std::env::var(name).ok();
-            unsafe {
-                std::env::set_var(name, value);
-            }
-            TempEnv {
-                name: name.to_string(),
-                old_value,
-            }
-        }
-    }
-
-    impl Drop for TempEnv {
-        fn drop(&mut self) {
-            if let Some(old_value) = &self.old_value {
-                unsafe { std::env::set_var(&self.name, old_value) }
-            } else {
-                unsafe { std::env::remove_var(&self.name) }
-            }
-        }
     }
 
     fn project_path() -> PathBuf {
