@@ -327,15 +327,9 @@ mod test {
     #[test]
     fn create_dirs() {
         let temp_dir = TempDir::new().unwrap();
-
-        let mut autoload_dir = temp_dir.path().to_path_buf();
-        autoload_dir.push("autoload");
-
-        let mut autoload_plugins_dir = autoload_dir.clone();
-        autoload_plugins_dir.push("almoxarife");
-
-        let mut almoxarife_data_dir = temp_dir.path().to_path_buf();
-        almoxarife_data_dir.push("data");
+        let autoload_dir = temp_dir.path().join("autoload");
+        let autoload_plugins_dir = autoload_dir.join("almoxarife");
+        let almoxarife_data_dir = temp_dir.path().join("data");
 
         let mut executables_dir = project_path();
         executables_dir.push("tests");
