@@ -215,18 +215,15 @@ impl Kak<File> {
 
 impl<W: Write> Kak<W> {
     pub fn write_prelude(&mut self) -> Result<()> {
-        let prelude = r"
-        hook global KakBegin .* %🧺
-
-        add-highlighter shared/almoxarife regions
-        add-highlighter shared/almoxarife/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
-        add-highlighter shared/almoxarife/ region '^\s*config:[^\n]' '\n' ref kakrc
-
-        hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
-            add-highlighter window/almoxarife ref almoxarife
-            hook -once -always window WinClose .* %{ remove-highlighter window/almoxarife }
-        }
-        ";
+        let prelude = r"hook global KakBegin .* %🧺
+add-highlighter shared/almoxarife regions
+add-highlighter shared/almoxarife/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
+add-highlighter shared/almoxarife/ region '^\s*config:[^\n]' '\n' ref kakrc
+hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
+    add-highlighter window/almoxarife ref almoxarife
+    hook -once -always window WinClose .* %{ remove-highlighter window/almoxarife }
+}
+";
         self.write(prelude.as_bytes())
     }
 
@@ -234,7 +231,7 @@ impl<W: Write> Kak<W> {
         self.0.write_all(data).context("error writing kak file")
     }
 
-    pub fn close(mut self) -> Result<()> {
+    pub fn close(&mut self) -> Result<()> {
         self.0
             .write_all("🧺".as_bytes())
             .context("error writing kak file")
@@ -250,6 +247,7 @@ mod test {
 
     use tempfile::TempDir;
 
+    use super::Kak;
     use super::Setup;
 
     #[test]
@@ -359,6 +357,27 @@ mod test {
 
         assert!(runtime_dir.is_symlink());
         assert!(runtime_dir.metadata().is_ok());
+    }
+
+    #[test]
+    fn write_kak_file() {
+        let mut kak = Kak(Vec::new());
+        kak.write_prelude().unwrap();
+        kak.write(b"require-module a-plugin\n").unwrap();
+        kak.write(b"set global a-option 19\n").unwrap();
+        kak.close().unwrap();
+        let expected = r"hook global KakBegin .* %🧺
+add-highlighter shared/almoxarife regions
+add-highlighter shared/almoxarife/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
+add-highlighter shared/almoxarife/ region '^\s*config:[^\n]' '\n' ref kakrc
+hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
+    add-highlighter window/almoxarife ref almoxarife
+    hook -once -always window WinClose .* %{ remove-highlighter window/almoxarife }
+}
+require-module a-plugin
+set global an-option 19
+🧺";
+        assert_eq!(kak.0, expected.as_bytes());
     }
 
     fn project_path() -> PathBuf {
