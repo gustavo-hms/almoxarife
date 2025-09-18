@@ -62,7 +62,6 @@ impl<A, E: error::Error> Context<A> for result::Result<A, E> {
     }
 }
 
-#[derive(Default)]
 pub struct Setup {
     /// The path to `almoxarife.yaml`.
     pub almoxarife_yaml_path: PathBuf,
@@ -77,6 +76,19 @@ pub struct Setup {
     autoload_dir: PathBuf,
     // Custom environment variables tue setup process will consider.
     env: HashMap<&'static str, String>,
+}
+
+impl Default for Setup {
+    fn default() -> Self {
+        Setup {
+            almoxarife_yaml_path: "~/.config/almoxarife.yaml".into(),
+            almoxarife_data_dir: "~/.local/share/almoxarife".into(),
+            autoload_plugins_dir: "~/.config/kak/autoload/almoxarife".into(),
+            almoxarife_kak: "~/.config/kak/autoload/almoxarife/almoxarife.kak".into(),
+            autoload_dir: "~/.config/kak/autoload".into(),
+            env: HashMap::default(),
+        }
+    }
 }
 
 fn get_var(environment: &HashMap<&str, String>, var: &str) -> Option<String> {
@@ -423,8 +435,8 @@ set global an-option 19
                     location: "https://github.com/alexherbo2/auto-pairs.kak".into(),
                     is_local: false,
                     config: Default::default(),
-                    repository_path: "auto-pairs".into(),
-                    link_path: "auto-pairs".into(),
+                    repository_path: "~/.local/share/almoxarife/auto-pairs".into(),
+                    link_path: "~/.config/kak/autoload/almoxarife/auto-pairs".into(),
                 },
             ),
             (
@@ -434,8 +446,8 @@ set global an-option 19
                     location: "https://github.com/gustavo-hms/luar".into(),
                     is_local: false,
                     config: "set-option global luar_interpreter luajit".into(),
-                    repository_path: "luar".into(),
-                    link_path: "luar".into(),
+                    repository_path: "~/.local/share/almoxarife/luar".into(),
+                    link_path: "~/.config/kak/autoload/almoxarife/luar".into(),
                 },
             ),
             (
@@ -446,7 +458,7 @@ set global an-option 19
                     is_local: true,
                     config: Default::default(),
                     repository_path: "/home/gustavo-hms/peneira".into(),
-                    link_path: "peneira".into(),
+                    link_path: "~/.config/kak/autoload/almoxarife/peneira".into(),
                 },
             ),
             (
@@ -456,8 +468,8 @@ set global an-option 19
                     location: "https://codeberg.org/mbauhardt/peneira-filters".into(),
                     is_local: false,
                     config: "map global normal <c-p> ': peneira-filters-mode<ret>'\n".into(),
-                    repository_path: "peneira-filters".into(),
-                    link_path: "peneira-filters".into(),
+                    repository_path: "~/.local/share/almoxarife/peneira-filters".into(),
+                    link_path: "~/.config/kak/autoload/almoxarife/peneira-filters".into(),
                 },
             ),
         ]
@@ -497,7 +509,6 @@ set global an-option 19
             .into_iter()
             .map(|p| (p.name.clone(), p))
             .collect();
-        dbg!(&plugins);
 
         let expected: HashMap<_, _> = [
             (
@@ -507,8 +518,8 @@ set global an-option 19
                     location: "https://github.com/alexherbo2/auto-pairs.kak".into(),
                     is_local: false,
                     config: Default::default(),
-                    repository_path: "auto-pairs".into(),
-                    link_path: "auto-pairs".into(),
+                    repository_path: "~/.local/share/almoxarife/auto-pairs".into(),
+                    link_path: "~/.config/kak/autoload/almoxarife/auto-pairs".into(),
                 },
             ),
             (
@@ -518,8 +529,8 @@ set global an-option 19
                     location: "https://github.com/gustavo-hms/luar".into(),
                     is_local: false,
                     config: "set-option global luar_interpreter luajit".into(),
-                    repository_path: "luar".into(),
-                    link_path: "luar".into(),
+                    repository_path: "~/.local/share/almoxarife/luar".into(),
+                    link_path: "~/.config/kak/autoload/almoxarife/luar".into(),
                 },
             ),
         ]
