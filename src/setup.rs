@@ -19,8 +19,10 @@ use std::result;
 use std::thread;
 use std::time::Duration;
 
-use crate::plugin::Plugin;
-use crate::plugin::PluginTree;
+use crate::setup::plugin::Plugin;
+use crate::setup::plugin::PluginTree;
+
+pub mod plugin;
 
 #[derive(Debug)]
 pub struct Error(String);
@@ -184,12 +186,9 @@ impl<'setup> Config<'setup, File> {
     }
 }
 
-impl<'setup, R: 'setup> Config<'setup, R>
-where
-    &'setup R: Read,
-{
-    pub fn parse_yaml(&'setup self) -> Result<Vec<Plugin>> {
-        let tree: HashMap<String, PluginTree> = serde_yaml::from_reader(&self.file)?;
+impl<'setup, R: Read> Config<'setup, R> {
+    pub fn parse_yaml(self) -> Result<Vec<Plugin>> {
+        let tree: HashMap<String, PluginTree> = serde_yaml::from_reader(self.file)?;
 
         if tree.is_empty() {
             return Err(Error("configuration file has no YAML element".to_string()));
@@ -240,6 +239,7 @@ hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
     use std::env;
     use std::fs;
     use std::path::Path;
@@ -247,6 +247,9 @@ mod test {
 
     use tempfile::TempDir;
 
+    use crate::setup::plugin::Plugin;
+
+    use super::Config;
     use super::Kak;
     use super::Setup;
 
@@ -364,7 +367,7 @@ mod test {
         let mut kak = Kak(Vec::new());
         kak.write_prelude().unwrap();
         kak.write(b"require-module a-plugin\n").unwrap();
-        kak.write(b"set global a-option 19\n").unwrap();
+        kak.write(b"set global an-option 19\n").unwrap();
         kak.close().unwrap();
         let expected = r"hook global KakBegin .* %🧺
 add-highlighter shared/almoxarife regions
@@ -378,6 +381,151 @@ require-module a-plugin
 set global an-option 19
 🧺";
         assert_eq!(kak.0, expected.as_bytes());
+    }
+
+    #[test]
+    fn parse_yaml() {
+        let file = b"
+            luar:
+                location: https://github.com/gustavo-hms/luar
+                config: set-option global luar_interpreter luajit
+
+                peneira:
+                    location: /home/gustavo-hms/peneira
+                    disabled: false
+
+                    peneira-filters:
+                      location: https://codeberg.org/mbauhardt/peneira-filters
+                      config: |
+                        map global normal <c-p> ': peneira-filters-mode<ret>'
+
+            auto-pairs:
+                location: https://github.com/alexherbo2/auto-pairs.kak
+            ";
+
+        let config = Config {
+            file: file.as_slice(),
+            setup: &Setup::default(),
+        };
+
+        let plugins: HashMap<_, _> = config
+            .parse_yaml()
+            .unwrap()
+            .into_iter()
+            .map(|p| (p.name.clone(), p))
+            .collect();
+
+        let expected: HashMap<_, _> = [
+            (
+                "auto-pairs".to_string(),
+                Plugin {
+                    name: "auto-pairs".into(),
+                    location: "https://github.com/alexherbo2/auto-pairs.kak".into(),
+                    is_local: false,
+                    config: Default::default(),
+                    repository_path: "auto-pairs".into(),
+                    link_path: "auto-pairs".into(),
+                },
+            ),
+            (
+                "luar".to_string(),
+                Plugin {
+                    name: "luar".into(),
+                    location: "https://github.com/gustavo-hms/luar".into(),
+                    is_local: false,
+                    config: "set-option global luar_interpreter luajit".into(),
+                    repository_path: "luar".into(),
+                    link_path: "luar".into(),
+                },
+            ),
+            (
+                "peneira".to_string(),
+                Plugin {
+                    name: "peneira".into(),
+                    location: "/home/gustavo-hms/peneira".into(),
+                    is_local: true,
+                    config: Default::default(),
+                    repository_path: "/home/gustavo-hms/peneira".into(),
+                    link_path: "peneira".into(),
+                },
+            ),
+            (
+                "peneira-filters".to_string(),
+                Plugin {
+                    name: "peneira-filters".into(),
+                    location: "https://codeberg.org/mbauhardt/peneira-filters".into(),
+                    is_local: false,
+                    config: "map global normal <c-p> ': peneira-filters-mode<ret>'\n".into(),
+                    repository_path: "peneira-filters".into(),
+                    link_path: "peneira-filters".into(),
+                },
+            ),
+        ]
+        .into();
+
+        assert_eq!(plugins, expected);
+    }
+
+    #[test]
+    fn parse_yaml_disabled_plugin() {
+        let file = b"
+            luar:
+                location: https://github.com/gustavo-hms/luar
+                config: set-option global luar_interpreter luajit
+
+                peneira:
+                    location: /home/gustavo-hms/peneira
+                    disabled: true
+
+                    peneira-filters:
+                      location: https://codeberg.org/mbauhardt/peneira-filters
+                      config: |
+                        map global normal <c-p> ': peneira-filters-mode<ret>'
+
+            auto-pairs:
+                location: https://github.com/alexherbo2/auto-pairs.kak
+            ";
+
+        let config = Config {
+            file: file.as_slice(),
+            setup: &Setup::default(),
+        };
+
+        let plugins: HashMap<_, _> = config
+            .parse_yaml()
+            .unwrap()
+            .into_iter()
+            .map(|p| (p.name.clone(), p))
+            .collect();
+        dbg!(&plugins);
+
+        let expected: HashMap<_, _> = [
+            (
+                "auto-pairs".to_string(),
+                Plugin {
+                    name: "auto-pairs".into(),
+                    location: "https://github.com/alexherbo2/auto-pairs.kak".into(),
+                    is_local: false,
+                    config: Default::default(),
+                    repository_path: "auto-pairs".into(),
+                    link_path: "auto-pairs".into(),
+                },
+            ),
+            (
+                "luar".to_string(),
+                Plugin {
+                    name: "luar".into(),
+                    location: "https://github.com/gustavo-hms/luar".into(),
+                    is_local: false,
+                    config: "set-option global luar_interpreter luajit".into(),
+                    repository_path: "luar".into(),
+                    link_path: "luar".into(),
+                },
+            ),
+        ]
+        .into();
+
+        assert_eq!(plugins, expected);
     }
 
     fn project_path() -> PathBuf {

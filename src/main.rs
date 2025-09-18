@@ -15,11 +15,12 @@ use colorized::Color;
 use colorized::Colors;
 use setup::Kak;
 
-use plugin::Plugin;
-use plugin::Status;
+use setup::plugin::Plugin;
+use setup::plugin::Status;
 use setup::Setup;
 
-mod plugin;
+use crate::setup::plugin;
+
 mod setup;
 
 fn main() -> Result<()> {

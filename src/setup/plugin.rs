@@ -6,6 +6,7 @@ use std::error;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::fs;
+use std::iter;
 use std::os::unix;
 use std::path::PathBuf;
 use std::process::Command;
@@ -102,29 +103,24 @@ impl PluginTree {
             return Vec::new();
         }
 
-        let children = self
-            .children
-            .iter()
-            .flat_map(|(child_name, child)| child.plugins(child_name.clone(), setup));
-
-        let mut plugins = vec![Plugin::new(name, self, setup)];
-
-        for child in children {
-            plugins.push(child);
-        }
-
-        plugins
+        iter::once(Plugin::new(name, self, setup))
+            .chain(
+                self.children
+                    .iter()
+                    .flat_map(|(child_name, child)| child.plugins(child_name.clone(), setup)),
+            )
+            .collect()
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Plugin {
-    name: String,
-    location: String,
-    is_local: bool,
-    repository_path: PathBuf,
-    link_path: PathBuf,
-    disabled: bool,
-    config: String,
+    pub(super) name: String,
+    pub(super) location: String,
+    pub(super) is_local: bool,
+    pub(super) config: String,
+    pub(super) repository_path: PathBuf,
+    pub(super) link_path: PathBuf,
 }
 
 fn is_local(location: &str) -> bool {
@@ -145,7 +141,6 @@ impl Plugin {
 
         Plugin {
             name,
-            disabled: node.disabled,
             config: node.config.clone(),
             location: node.location.clone(),
             is_local,
@@ -188,12 +183,8 @@ impl Plugin {
     }
 
     fn symlink(&self) -> Result<(), Error> {
-        if !self.disabled {
-            unix::fs::symlink(&self.repository_path, &self.link_path)
-                .map_err(|e| Error::Link(self.name.clone(), e.to_string()))?;
-        }
-
-        Ok(())
+        unix::fs::symlink(&self.repository_path, &self.link_path)
+            .map_err(|e| Error::Link(self.name.clone(), e.to_string()))
     }
 
     fn clone_repo(&self, url: &str) -> Result<(), Error> {
