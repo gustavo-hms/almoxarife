@@ -14,78 +14,6 @@ use std::process::Stdio;
 
 use crate::setup::Setup;
 
-type Name = String;
-type Message = String;
-
-#[derive(Debug)]
-pub enum Error {
-    Clone(Name, Message),
-    Pull(Name, Message),
-    Link(Name, Message),
-}
-
-impl Error {
-    pub fn plugin(&self) -> &str {
-        match self {
-            Error::Clone(name, _) => name,
-            Error::Pull(name, _) => name,
-            Error::Link(name, _) => name,
-        }
-    }
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Clone(name, message) => {
-                write!(
-                    f,
-                    "{}: could not clone: {message}",
-                    name.color(Colors::RedFg)
-                )
-            }
-
-            Error::Pull(name, message) => {
-                write!(
-                    f,
-                    "{}: could not update: {message}",
-                    name.color(Colors::RedFg)
-                )
-            }
-
-            Error::Link(name, message) => {
-                write!(
-                    f,
-                    "{}: could not activate: {message}",
-                    name.color(Colors::RedFg)
-                )
-            }
-        }
-    }
-}
-
-impl error::Error for Error {}
-
-pub enum Status {
-    Installed {
-        name: String,
-        config: String,
-    },
-    Updated {
-        name: String,
-        log: String,
-        config: String,
-    },
-    Unchanged {
-        name: String,
-        config: String,
-    },
-    Local {
-        name: String,
-        config: String,
-    },
-}
-
 #[derive(Debug, Deserialize)]
 pub struct PluginTree {
     location: String,
@@ -121,6 +49,9 @@ pub struct Plugin {
     pub(super) config: String,
     pub(super) repository_path: PathBuf,
     pub(super) link_path: PathBuf,
+    // Custom environment variables the plugin setup will consider.
+    #[cfg(test)]
+    pub(super) env: HashMap<&'static str, String>,
 }
 
 fn is_local(location: &str) -> bool {
@@ -146,6 +77,8 @@ impl Plugin {
             is_local,
             repository_path,
             link_path,
+            #[cfg(test)]
+            env: setup.env.clone(),
         }
     }
 
@@ -267,5 +200,95 @@ impl Plugin {
             .ok()?;
 
         Some(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+}
+
+type Name = String;
+type Message = String;
+
+#[derive(Debug)]
+pub enum Error {
+    Clone(Name, Message),
+    Pull(Name, Message),
+    Link(Name, Message),
+}
+
+impl Error {
+    pub fn plugin(&self) -> &str {
+        match self {
+            Error::Clone(name, _) => name,
+            Error::Pull(name, _) => name,
+            Error::Link(name, _) => name,
+        }
+    }
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Clone(name, message) => {
+                write!(
+                    f,
+                    "{}: could not clone: {message}",
+                    name.color(Colors::RedFg)
+                )
+            }
+
+            Error::Pull(name, message) => {
+                write!(
+                    f,
+                    "{}: could not update: {message}",
+                    name.color(Colors::RedFg)
+                )
+            }
+
+            Error::Link(name, message) => {
+                write!(
+                    f,
+                    "{}: could not activate: {message}",
+                    name.color(Colors::RedFg)
+                )
+            }
+        }
+    }
+}
+
+impl error::Error for Error {}
+
+pub enum Status {
+    Installed {
+        name: String,
+        config: String,
+    },
+    Updated {
+        name: String,
+        log: String,
+        config: String,
+    },
+    Unchanged {
+        name: String,
+        config: String,
+    },
+    Local {
+        name: String,
+        config: String,
+    },
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn plugin_update_clone() {
+        let plugin = Plugin {
+            name: "kakoune-phantom-selection".into(),
+            location: "https://github.com/occivink/kakoune-phantom-selection".into(),
+            is_local: false,
+            config: "map global normal f     ': phantom-selection-add-selection<ret>'".into(),
+            repository_path: todo!(),
+            link_path: todo!(),
+            env: Default::default(),
+        };
     }
 }

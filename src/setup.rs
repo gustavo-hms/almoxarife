@@ -74,7 +74,8 @@ pub struct Setup {
     almoxarife_kak: PathBuf,
     // The Kakoune's autoload directory.
     autoload_dir: PathBuf,
-    // Custom environment variables tue setup process will consider.
+    // Custom environment variables the setup process will consider.
+    #[cfg(test)]
     env: HashMap<&'static str, String>,
 }
 
@@ -86,6 +87,7 @@ impl Default for Setup {
             autoload_plugins_dir: "~/.config/kak/autoload/almoxarife".into(),
             almoxarife_kak: "~/.config/kak/autoload/almoxarife/almoxarife.kak".into(),
             autoload_dir: "~/.config/kak/autoload".into(),
+            #[cfg(test)]
             env: HashMap::default(),
         }
     }
@@ -130,6 +132,7 @@ impl Setup {
             autoload_dir,
             autoload_plugins_dir,
             almoxarife_data_dir,
+            #[cfg(test)]
             env,
         }
     }
@@ -156,12 +159,16 @@ impl Setup {
     }
 
     fn link_runtime_dir(&self) -> Result<()> {
-        let mut kakoune = Command::new("kak")
+        let mut command = Command::new("kak");
+        command
             .args(["-d", "-s", "almoxarife", "-E"])
             .arg("echo -to-file /dev/stdout %val[runtime]")
-            .stdout(Stdio::piped())
-            .envs(&self.env)
-            .spawn()?;
+            .stdout(Stdio::piped());
+
+        #[cfg(test)]
+        command.envs(&self.env);
+
+        let mut kakoune = command.spawn()?;
 
         thread::sleep(Duration::from_millis(100));
 
@@ -253,14 +260,10 @@ hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
 mod test {
     use std::collections::HashMap;
     use std::env;
-    use std::fs;
     use std::path::Path;
-    use std::path::PathBuf;
-
     use tempfile::TempDir;
 
-    use crate::setup::plugin::Plugin;
-
+    use super::plugin::Plugin;
     use super::Config;
     use super::Kak;
     use super::Setup;
@@ -344,20 +347,11 @@ mod test {
         let autoload_plugins_dir = autoload_dir.join("almoxarife");
         let almoxarife_data_dir = temp_dir.path().join("data");
 
-        let mut executables_dir = project_path();
-        executables_dir.push("tests");
-
-        let path = std::env::var("PATH").unwrap();
-
         let setup = Setup {
             almoxarife_data_dir: almoxarife_data_dir.clone(),
             autoload_dir: autoload_dir.clone(),
             autoload_plugins_dir: autoload_plugins_dir.clone(),
-            env: [(
-                "PATH",
-                format!("{}:{path}", executables_dir.to_string_lossy()),
-            )]
-            .into(),
+            env: add_tests_executables_to_path(),
             ..Default::default()
         };
 
@@ -437,6 +431,7 @@ set global an-option 19
                     config: Default::default(),
                     repository_path: "~/.local/share/almoxarife/auto-pairs".into(),
                     link_path: "~/.config/kak/autoload/almoxarife/auto-pairs".into(),
+                    env: Default::default(),
                 },
             ),
             (
@@ -448,6 +443,7 @@ set global an-option 19
                     config: "set-option global luar_interpreter luajit".into(),
                     repository_path: "~/.local/share/almoxarife/luar".into(),
                     link_path: "~/.config/kak/autoload/almoxarife/luar".into(),
+                    env: Default::default(),
                 },
             ),
             (
@@ -459,6 +455,7 @@ set global an-option 19
                     config: Default::default(),
                     repository_path: "/home/gustavo-hms/peneira".into(),
                     link_path: "~/.config/kak/autoload/almoxarife/peneira".into(),
+                    env: Default::default(),
                 },
             ),
             (
@@ -470,6 +467,7 @@ set global an-option 19
                     config: "map global normal <c-p> ': peneira-filters-mode<ret>'\n".into(),
                     repository_path: "~/.local/share/almoxarife/peneira-filters".into(),
                     link_path: "~/.config/kak/autoload/almoxarife/peneira-filters".into(),
+                    env: Default::default(),
                 },
             ),
         ]
@@ -520,6 +518,7 @@ set global an-option 19
                     config: Default::default(),
                     repository_path: "~/.local/share/almoxarife/auto-pairs".into(),
                     link_path: "~/.config/kak/autoload/almoxarife/auto-pairs".into(),
+                    env: Default::default(),
                 },
             ),
             (
@@ -531,6 +530,7 @@ set global an-option 19
                     config: "set-option global luar_interpreter luajit".into(),
                     repository_path: "~/.local/share/almoxarife/luar".into(),
                     link_path: "~/.config/kak/autoload/almoxarife/luar".into(),
+                    env: Default::default(),
                 },
             ),
         ]
@@ -539,7 +539,15 @@ set global an-option 19
         assert_eq!(plugins, expected);
     }
 
-    fn project_path() -> PathBuf {
-        env::var("CARGO_MANIFEST_DIR").unwrap().into()
+    fn add_tests_executables_to_path() -> HashMap<&'static str, String> {
+        let project_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+        let project_dir = Path::new(&project_dir);
+        let path = std::env::var("PATH").unwrap();
+
+        [(
+            "PATH",
+            format!("{}:{path}", project_dir.join("tests").to_string_lossy()),
+        )]
+        .into()
     }
 }
