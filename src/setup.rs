@@ -540,19 +540,6 @@ set global an-option 19
     }
 
     fn project_path() -> PathBuf {
-        let path = env::current_dir().unwrap();
-        let mut path_ancestors = path.as_path().ancestors();
-
-        while let Some(p) = path_ancestors.next() {
-            if fs::read_dir(p)
-                .unwrap()
-                .into_iter()
-                .any(|p| p.unwrap().file_name() == "Cargo.toml")
-            {
-                return p.into();
-            }
-        }
-
-        panic!("could not find project path");
+        env::var("CARGO_MANIFEST_DIR").unwrap().into()
     }
 }
