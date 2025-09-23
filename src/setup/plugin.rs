@@ -123,12 +123,18 @@ impl Plugin {
     fn clone_repo(&self, url: &str) -> Result<(), Error> {
         let location = format!("{url}.git");
 
-        let status = Command::new("git")
+        let mut command = Command::new("git");
+        command
             .arg("clone")
             .arg(location)
             .arg(&self.repository_path)
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null());
+
+        #[cfg(test)]
+        command.envs(&self.env);
+
+        let status = command
             .status()
             .map_err(|e| Error::Clone(self.name.clone(), e.to_string()))?;
 
@@ -144,11 +150,17 @@ impl Plugin {
     fn pull(&self) -> Result<Option<String>, Error> {
         let old_revision = self.current_revision();
 
-        let status = Command::new("git")
+        let mut command = Command::new("git");
+        command
             .arg("pull")
             .current_dir(&self.repository_path)
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null());
+
+        #[cfg(test)]
+        command.envs(&self.env);
+
+        let status = command
             .status()
             .map_err(|e| Error::Pull(self.name.clone(), e.to_string()))?;
 
@@ -175,12 +187,15 @@ impl Plugin {
     }
 
     fn current_revision(&self) -> Option<String> {
-        let output = Command::new("git")
+        let mut command = Command::new("git");
+        command
             .current_dir(&self.repository_path)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .ok()?;
+            .args(["rev-parse", "HEAD"]);
 
+        #[cfg(test)]
+        command.envs(&self.env);
+
+        let output = command.output().ok()?;
         let mut revision = String::from_utf8_lossy(&output.stdout).to_string();
         revision.pop(); // Remove \n
         Some(revision)
@@ -193,12 +208,19 @@ impl Plugin {
 
         let range = format!("{old_revision}..{new_revision}");
 
-        let output = Command::new("git")
-            .current_dir(&self.repository_path)
-            .args(["log", &range, "--oneline", "--no-decorate", "--reverse"])
-            .output()
-            .ok()?;
+        let mut command = Command::new("git");
+        command.current_dir(&self.repository_path).args([
+            "log",
+            &range,
+            "--oneline",
+            "--no-decorate",
+            "--reverse",
+        ]);
 
+        #[cfg(test)]
+        command.envs(&self.env);
+
+        let output = command.output().ok()?;
         Some(String::from_utf8_lossy(&output.stdout).to_string())
     }
 }
@@ -285,7 +307,7 @@ mod test {
             name: "kakoune-phantom-selection".into(),
             location: "https://github.com/occivink/kakoune-phantom-selection".into(),
             is_local: false,
-            config: "map global normal f     ': phantom-selection-add-selection<ret>'".into(),
+            config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
             repository_path: todo!(),
             link_path: todo!(),
             env: Default::default(),
