@@ -44,10 +44,15 @@ impl PluginTree {
 #[derive(Debug, PartialEq)]
 pub struct Plugin {
     pub(super) name: String,
+    /// Where the plugin is located (the URL of a git repo or a local folder).
     pub(super) location: String,
+    /// Whether the code is located in a local folder.
     pub(super) is_local: bool,
+    /// User defined configuration for the plugin.
     pub(super) config: String,
+    /// The path to the folder containing the plugin's code.
     pub(super) repository_path: PathBuf,
+    /// The path inside `autoload` where a soft link of the plugin is.
     pub(super) link_path: PathBuf,
     // Custom environment variables the plugin setup will consider.
     #[cfg(test)]
@@ -129,20 +134,24 @@ impl Plugin {
             .arg(location)
             .arg(&self.repository_path)
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
 
         #[cfg(test)]
         command.envs(&self.env);
 
-        let status = command
-            .status()
+        let output = command
+            .output()
             .map_err(|e| Error::Clone(self.name.clone(), e.to_string()))?;
 
-        match status.code() {
+        match output.status.code() {
             None | Some(0) => Ok(()),
             Some(code) => Err(Error::Clone(
                 self.name.clone(),
-                format!("git exited with status {}", code),
+                format!(
+                    "git exited with status {}: {}",
+                    code,
+                    String::from_utf8_lossy(&output.stderr)
+                ),
             )),
         }
     }
@@ -299,18 +308,39 @@ pub enum Status {
 
 #[cfg(test)]
 mod test {
+
+    use tempfile::Builder;
+
     use super::*;
+    use crate::setup::test::add_tests_executables_to_path;
 
     #[test]
     fn plugin_update_clone() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repository_path = temp_dir.path().join("repo/kakoune-phantom-selection");
+        let link_dir = Builder::new().prefix("link").tempdir().unwrap();
+        let link_path = link_dir.path().join("kakoune-phantom-selection");
+        let url = "https://github.com/occivink/kakoune-phantom-selection";
+
+        let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_LOCATION", url.to_string() + ".git");
+        env.insert(
+            "ALMOXARIFE_TEST_REPO_PATH",
+            repository_path.to_string_lossy().into(),
+        );
+
         let plugin = Plugin {
             name: "kakoune-phantom-selection".into(),
-            location: "https://github.com/occivink/kakoune-phantom-selection".into(),
+            location: url.to_string(),
             is_local: false,
             config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
-            repository_path: todo!(),
-            link_path: todo!(),
-            env: Default::default(),
+            repository_path,
+            link_path: link_path.clone(),
+            env,
         };
+
+        plugin.update().unwrap();
+        assert!(link_path.is_symlink());
+        assert!(link_path.metadata().is_ok());
     }
 }

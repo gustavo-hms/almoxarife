@@ -169,9 +169,7 @@ impl Setup {
         command.envs(&self.env);
 
         let mut kakoune = command.spawn()?;
-
         thread::sleep(Duration::from_millis(100));
-
         kakoune.kill()?;
         let output = kakoune.wait_with_output()?;
         let runtime_dir = OsStr::from_bytes(&output.stdout);
@@ -539,7 +537,7 @@ set global an-option 19
         assert_eq!(plugins, expected);
     }
 
-    fn add_tests_executables_to_path() -> HashMap<&'static str, String> {
+    pub fn add_tests_executables_to_path() -> HashMap<&'static str, String> {
         let project_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
         let project_dir = Path::new(&project_dir);
         let path = std::env::var("PATH").unwrap();

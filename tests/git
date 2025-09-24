@@ -1,0 +1,30 @@
+#!/usr/bin/env fish
+
+if test -n "$ALMOXARIFE_TEST_FAIL"
+    echo $ALMOXARIFE_TEST_FAIL >&2
+    exit 1
+end
+
+if test -n "$ALMOXARIFE_TEST_CWD"; and test "$ALMOXARIFE_TEST_CWD" != "$PWD"
+    echo "wrong CWD: $PWD; expecting $ALMOXARIFE_TEST_CWD" >&2
+    exit 2
+end
+
+switch $argv[1]
+case clone
+    if test "$argv[2]" != "$ALMOXARIFE_TEST_LOCATION"
+        echo "wrong git URL: $argv[2]; expecting $ALMOXARIFE_TEST_LOCATION" >&2
+        exit 3
+    end
+
+    if test "$argv[3]" != "$ALMOXARIFE_TEST_REPO_PATH"
+        echo "wrong repo path: $argv[2]; expecting $ALMOXARIFE_TEST_REPO_PATH" >&2
+        exit 4
+    end
+
+    mkdir -p $ALMOXARIFE_TEST_REPO_PATH
+
+case '*'
+    echo "unexpected subcommand: '$argv[1]'" >&2
+    exit 5
+end
