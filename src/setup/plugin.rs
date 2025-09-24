@@ -237,7 +237,7 @@ impl Plugin {
 type Name = String;
 type Message = String;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     Clone(Name, Message),
     Pull(Name, Message),
@@ -286,6 +286,7 @@ impl Display for Error {
 
 impl error::Error for Error {}
 
+#[derive(Debug)]
 pub enum Status {
     Installed {
         name: String,
@@ -342,5 +343,41 @@ mod test {
         plugin.update().unwrap();
         assert!(link_path.is_symlink());
         assert!(link_path.metadata().is_ok());
+    }
+
+    #[test]
+    fn plugin_update_clone_unexpected_git_fail() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repository_path = temp_dir.path().join("repo/kakoune-phantom-selection");
+        let link_dir = Builder::new().prefix("link").tempdir().unwrap();
+        let link_path = link_dir.path().join("kakoune-phantom-selection");
+        let url = "https://github.com/occivink/kakoune-phantom-selection";
+
+        let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_FAIL", "unexpected error!".to_string());
+        env.insert("ALMOXARIFE_TEST_LOCATION", url.to_string() + ".git");
+        env.insert(
+            "ALMOXARIFE_TEST_REPO_PATH",
+            repository_path.to_string_lossy().into(),
+        );
+
+        let plugin = Plugin {
+            name: "kakoune-phantom-selection".into(),
+            location: url.to_string(),
+            is_local: false,
+            config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
+            repository_path,
+            link_path: link_path.clone(),
+            env,
+        };
+
+        let error = plugin.update().unwrap_err();
+        assert_eq!(
+            error,
+            Error::Clone(
+                "kakoune-phantom-selection".into(),
+                "git exited with status 1: unexpected error!\n".into()
+            )
+        );
     }
 }
