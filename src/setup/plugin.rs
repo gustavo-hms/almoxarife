@@ -318,6 +318,8 @@ mod test {
     #[test]
     fn plugin_update_clone() {
         let temp_dir = tempfile::tempdir().unwrap();
+        // Almoxarife should see the dir `repo/kakoune-phantom-selection` does not
+        // exist and clone it.
         let repository_path = temp_dir.path().join("repo/kakoune-phantom-selection");
         let link_dir = Builder::new().prefix("link").tempdir().unwrap();
         let link_path = link_dir.path().join("kakoune-phantom-selection");
@@ -376,7 +378,7 @@ mod test {
             error,
             Error::Clone(
                 "kakoune-phantom-selection".into(),
-                "git exited with status 1: unexpected error!\n".into()
+                "git exited with status 1: unexpected error!".into()
             )
         );
     }

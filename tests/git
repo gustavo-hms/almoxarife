@@ -1,30 +1,31 @@
-#!/usr/bin/env fish
+#!/usr/bin/env fennel
 
-if test -n "$ALMOXARIFE_TEST_FAIL"
-    echo $ALMOXARIFE_TEST_FAIL >&2
-    exit 1
-end
+(local fmt string.format)
 
-if test -n "$ALMOXARIFE_TEST_CWD"; and test "$ALMOXARIFE_TEST_CWD" != "$PWD"
-    echo "wrong CWD: $PWD; expecting $ALMOXARIFE_TEST_CWD" >&2
-    exit 2
-end
+(λ fail-with-code-and-msg [code msg]
+  (io.stderr:write msg)
+  (os.exit code))
 
-switch $argv[1]
-case clone
-    if test "$argv[2]" != "$ALMOXARIFE_TEST_LOCATION"
-        echo "wrong git URL: $argv[2]; expecting $ALMOXARIFE_TEST_LOCATION" >&2
-        exit 3
-    end
+(λ assert-eq-env [description ?value env-var-name error-code]
+  "Assert the provided value is equal to the environment variable whose name is
+  provided. If not, print a message to stderr containing the provided description
+  and exit with the provided error code"
+  (let [env-var (os.getenv env-var-name)]
+    (when (and env-var (not= ?value env-var))
+      (fail-with-code-and-msg error-code
+                              (fmt "wrong %s: %s; expecting %s" description
+                                   ?value env-var)))))
 
-    if test "$argv[3]" != "$ALMOXARIFE_TEST_REPO_PATH"
-        echo "wrong repo path: $argv[2]; expecting $ALMOXARIFE_TEST_REPO_PATH" >&2
-        exit 4
-    end
+(let [fail (os.getenv :ALMOXARIFE_TEST_FAIL)]
+  (when fail
+    (fail-with-code-and-msg 1 fail)))
 
-    mkdir -p $ALMOXARIFE_TEST_REPO_PATH
+(assert-eq-env "CWD" (os.getenv :PWD) :ALMOXARIFE_TEST_CWD 2)
+(assert-eq-env "subcommand" (. arg 1) :ALMOXARIFE_TEST_SUBCOMMAND 3)
 
-case '*'
-    echo "unexpected subcommand: '$argv[1]'" >&2
-    exit 5
-end
+(case (. arg 1)
+  :clone (do
+           (assert-eq-env "git URL" (. arg 2) :ALMOXARIFE_TEST_LOCATION 4)
+           (assert-eq-env "repo path" (. arg 3) :ALMOXARIFE_TEST_REPO_PATH 5)
+           (os.execute (fmt "mkdir -p %s" (os.getenv :ALMOXARIFE_TEST_REPO_PATH))))
+  command (fail-with-code-and-msg 6 (.. "unexpected subcommand: " command)))
