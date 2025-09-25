@@ -268,56 +268,11 @@ mod test {
 
     #[test]
     fn new_setup() {
-        let setup = Setup::with_env([("HOME", "custom-home".to_string())].into());
-
-        assert_eq!(
-            setup.almoxarife_data_dir,
-            Path::new("custom-home/.local/share/almoxarife")
-        );
-
-        assert_eq!(
-            setup.autoload_plugins_dir,
-            Path::new("custom-home/.config/kak/autoload/almoxarife")
-        );
-
-        assert_eq!(
-            setup.almoxarife_yaml_path,
-            Path::new("custom-home/.config/almoxarife.yaml")
-        );
-    }
-
-    #[test]
-    fn new_setup_custom_xdg_config_home() {
-        let setup = Setup::with_env(
-            [
-                ("HOME", "custom-home".to_string()),
-                ("XDG_CONFIG_HOME", "custom-config".to_string()),
-            ]
-            .into(),
-        );
-
-        assert_eq!(
-            setup.almoxarife_data_dir,
-            Path::new("custom-home/.local/share/almoxarife")
-        );
-
-        assert_eq!(
-            setup.autoload_plugins_dir,
-            Path::new("custom-config/kak/autoload/almoxarife")
-        );
-
-        assert_eq!(
-            setup.almoxarife_yaml_path,
-            Path::new("custom-config/almoxarife.yaml")
-        );
-    }
-
-    #[test]
-    fn new_setup_custom_xdg_data_home() {
         let setup = Setup::with_env(
             [
                 ("HOME", "custom-home".to_string()),
                 ("XDG_DATA_HOME", "custom-data".to_string()),
+                ("XDG_CONFIG_HOME", "custom-config".to_string()),
             ]
             .into(),
         );
@@ -329,12 +284,12 @@ mod test {
 
         assert_eq!(
             setup.autoload_plugins_dir,
-            Path::new("custom-home/.config/kak/autoload/almoxarife")
+            Path::new("custom-config/kak/autoload/almoxarife")
         );
 
         assert_eq!(
             setup.almoxarife_yaml_path,
-            Path::new("custom-home/.config/almoxarife.yaml")
+            Path::new("custom-config/almoxarife.yaml")
         );
     }
 
