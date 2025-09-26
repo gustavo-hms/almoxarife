@@ -408,6 +408,7 @@ mod test {
 
         let mut env = add_tests_executables_to_path();
         env.insert("ALMOXARIFE_TEST_SUBCOMMAND", "pull".to_string());
+        // Test we are calling `git pull` from the right directory.
         env.insert(
             "ALMOXARIFE_TEST_CWD",
             repository_path.to_string_lossy().into(),
@@ -424,5 +425,44 @@ mod test {
         };
 
         plugin.update().unwrap();
+    }
+
+    #[test]
+    fn plugin_update_pull_unexpected_git_fail() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let repository_path = temp_dir.path().join("repo/kakoune-phantom-selection");
+        fs::create_dir_all(&repository_path).unwrap();
+
+        let link_dir = temp_dir.path().join("link");
+        fs::create_dir(&link_dir).unwrap();
+        let link_path = link_dir.join("kakoune-phantom-selection");
+
+        let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_FAIL", "unexpected error!".to_string());
+        env.insert("ALMOXARIFE_TEST_SUBCOMMAND", "pull".to_string());
+        env.insert(
+            "ALMOXARIFE_TEST_CWD",
+            repository_path.to_string_lossy().into(),
+        );
+
+        let plugin = Plugin {
+            name: "kakoune-phantom-selection".into(),
+            location: String::new(),
+            is_local: false,
+            config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
+            repository_path: repository_path.into(),
+            link_path: link_path.into(),
+            env,
+        };
+
+        let error = plugin.update().unwrap_err();
+        assert_eq!(
+            error,
+            Error::Pull(
+                "kakoune-phantom-selection".into(),
+                "git exited with status 1: unexpected error!".into()
+            )
+        );
     }
 }
