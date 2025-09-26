@@ -20,7 +20,7 @@
   (when fail
     (fail-with-code-and-msg 1 fail)))
 
-(assert-eq-env "CWD" (os.getenv :PWD) :ALMOXARIFE_TEST_CWD 2)
+(assert-eq-env "CWD" (: (io.popen "pwd") :read) :ALMOXARIFE_TEST_CWD 2)
 (assert-eq-env "subcommand" (. arg 1) :ALMOXARIFE_TEST_SUBCOMMAND 3)
 
 (case (. arg 1)
@@ -28,4 +28,8 @@
            (assert-eq-env "git URL" (. arg 2) :ALMOXARIFE_TEST_LOCATION 4)
            (assert-eq-env "repo path" (. arg 3) :ALMOXARIFE_TEST_REPO_PATH 5)
            (os.execute (fmt "mkdir -p %s" (os.getenv :ALMOXARIFE_TEST_REPO_PATH))))
-  command (fail-with-code-and-msg 6 (.. "unexpected subcommand: " command)))
+
+  :pull (when (> 1 (length arg))
+          (fail-with-code-and-msg 6 (.. "unexpected argument: " (. arg 2))))
+         
+  command (fail-with-code-and-msg 7 (.. "unexpected subcommand: " command)))

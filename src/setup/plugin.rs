@@ -164,20 +164,24 @@ impl Plugin {
             .arg("pull")
             .current_dir(&self.repository_path)
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
 
         #[cfg(test)]
         command.envs(&self.env);
 
-        let status = command
-            .status()
+        let output = command
+            .output()
             .map_err(|e| Error::Pull(self.name.clone(), e.to_string()))?;
 
-        if let Some(code) = status.code() {
+        if let Some(code) = output.status.code() {
             if code != 0 {
                 return Err(Error::Pull(
                     self.name.clone(),
-                    format!("git exited with status {}", code),
+                    format!(
+                        "git exited with status {}: {}",
+                        code,
+                        String::from_utf8_lossy(&output.stderr)
+                    ),
                 ));
             }
         }
@@ -309,9 +313,6 @@ pub enum Status {
 
 #[cfg(test)]
 mod test {
-
-    use tempfile::Builder;
-
     use super::*;
     use crate::setup::test::add_tests_executables_to_path;
 
@@ -321,11 +322,15 @@ mod test {
         // Almoxarife should see the dir `repo/kakoune-phantom-selection` does not
         // exist and clone it.
         let repository_path = temp_dir.path().join("repo/kakoune-phantom-selection");
-        let link_dir = Builder::new().prefix("link").tempdir().unwrap();
-        let link_path = link_dir.path().join("kakoune-phantom-selection");
+
+        let link_dir = temp_dir.path().join("link");
+        fs::create_dir(&link_dir).unwrap();
+        let link_path = link_dir.join("kakoune-phantom-selection");
+
         let url = "https://github.com/occivink/kakoune-phantom-selection";
 
         let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_SUBCOMMAND", "clone".to_string());
         env.insert("ALMOXARIFE_TEST_LOCATION", url.to_string() + ".git");
         env.insert(
             "ALMOXARIFE_TEST_REPO_PATH",
@@ -350,13 +355,18 @@ mod test {
     #[test]
     fn plugin_update_clone_unexpected_git_fail() {
         let temp_dir = tempfile::tempdir().unwrap();
+
         let repository_path = temp_dir.path().join("repo/kakoune-phantom-selection");
-        let link_dir = Builder::new().prefix("link").tempdir().unwrap();
-        let link_path = link_dir.path().join("kakoune-phantom-selection");
+
+        let link_dir = temp_dir.path().join("link");
+        fs::create_dir(&link_dir).unwrap();
+        let link_path = link_dir.join("kakoune-phantom-selection");
+
         let url = "https://github.com/occivink/kakoune-phantom-selection";
 
         let mut env = add_tests_executables_to_path();
         env.insert("ALMOXARIFE_TEST_FAIL", "unexpected error!".to_string());
+        env.insert("ALMOXARIFE_TEST_SUBCOMMAND", "clone".to_string());
         env.insert("ALMOXARIFE_TEST_LOCATION", url.to_string() + ".git");
         env.insert(
             "ALMOXARIFE_TEST_REPO_PATH",
@@ -381,5 +391,38 @@ mod test {
                 "git exited with status 1: unexpected error!".into()
             )
         );
+    }
+
+    #[test]
+    fn plugin_update_pull() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let repository_path = temp_dir.path().join("repo/kakoune-phantom-selection");
+        // Almoxarife should see the dir `repo/kakoune-phantom-selection` already
+        // exists and pull changes.
+        fs::create_dir_all(&repository_path).unwrap();
+
+        let link_dir = temp_dir.path().join("link");
+        fs::create_dir(&link_dir).unwrap();
+        let link_path = link_dir.join("kakoune-phantom-selection");
+
+        let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_SUBCOMMAND", "pull".to_string());
+        env.insert(
+            "ALMOXARIFE_TEST_CWD",
+            repository_path.to_string_lossy().into(),
+        );
+
+        let plugin = Plugin {
+            name: "kakoune-phantom-selection".into(),
+            location: String::new(),
+            is_local: false,
+            config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
+            repository_path: repository_path.into(),
+            link_path: link_path.into(),
+            env,
+        };
+
+        plugin.update().unwrap();
     }
 }
