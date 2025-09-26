@@ -121,8 +121,12 @@ impl Plugin {
     }
 
     fn symlink(&self) -> Result<(), Error> {
-        unix::fs::symlink(&self.repository_path, &self.link_path)
-            .map_err(|e| Error::Link(self.name.clone(), e.to_string()))
+        unix::fs::symlink(&self.repository_path, &self.link_path).map_err(|e| {
+            Error::Link(
+                self.name.clone(),
+                format!("{}: {}", e, self.link_path.to_string_lossy()),
+            )
+        })
     }
 
     fn clone_repo(&self, url: &str) -> Result<(), Error> {
@@ -394,6 +398,51 @@ mod test {
     }
 
     #[test]
+    fn plugin_update_clone_link_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let repository_path = temp_dir.path().join("repo/kakoune-phantom-selection");
+
+        // By not creating the subdirectory `link`, we should trigger a linking
+        // error. If the error is not triggered, then we are not really executing
+        // the linking phase.
+        let link_dir = temp_dir.path().join("link");
+        let link_path = link_dir.join("kakoune-phantom-selection");
+
+        let url = "https://github.com/occivink/kakoune-phantom-selection";
+
+        let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_SUBCOMMAND", "clone".to_string());
+        env.insert("ALMOXARIFE_TEST_LOCATION", url.to_string() + ".git");
+        env.insert(
+            "ALMOXARIFE_TEST_REPO_PATH",
+            repository_path.to_string_lossy().into(),
+        );
+
+        let plugin = Plugin {
+            name: "kakoune-phantom-selection".into(),
+            location: url.to_string(),
+            is_local: false,
+            config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
+            repository_path,
+            link_path: link_path.clone(),
+            env,
+        };
+
+        let error = plugin.update().unwrap_err();
+        assert_eq!(
+            error,
+            Error::Link(
+                "kakoune-phantom-selection".into(),
+                format!(
+                    "No such file or directory (os error 2): {}",
+                    link_path.to_string_lossy()
+                )
+            )
+        );
+    }
+
+    #[test]
     fn plugin_update_pull() {
         let temp_dir = tempfile::tempdir().unwrap();
 
@@ -462,6 +511,49 @@ mod test {
             Error::Pull(
                 "kakoune-phantom-selection".into(),
                 "git exited with status 1: unexpected error!".into()
+            )
+        );
+    }
+
+    #[test]
+    fn plugin_update_pull_link_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let repository_path = temp_dir.path().join("repo/kakoune-phantom-selection");
+        fs::create_dir_all(&repository_path).unwrap();
+
+        // By not creating the subdirectory `link`, we should trigger a linking
+        // error. If the error is not triggered, then we are not really executing
+        // the linking phase.
+        let link_dir = temp_dir.path().join("link");
+        let link_path = link_dir.join("kakoune-phantom-selection");
+
+        let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_SUBCOMMAND", "pull".to_string());
+        env.insert(
+            "ALMOXARIFE_TEST_CWD",
+            repository_path.to_string_lossy().into(),
+        );
+
+        let plugin = Plugin {
+            name: "kakoune-phantom-selection".into(),
+            location: String::new(),
+            is_local: false,
+            config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
+            repository_path: repository_path.into(),
+            link_path: link_path.clone(),
+            env,
+        };
+
+        let error = plugin.update().unwrap_err();
+        assert_eq!(
+            error,
+            Error::Link(
+                "kakoune-phantom-selection".into(),
+                format!(
+                    "No such file or directory (os error 2): {}",
+                    link_path.to_string_lossy()
+                )
             )
         );
     }
