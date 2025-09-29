@@ -161,7 +161,7 @@ impl Plugin {
     }
 
     fn pull(&self) -> Result<Option<String>, Error> {
-        let old_revision = self.current_revision();
+        let old_revision = self.current_revision()?;
 
         let mut command = Command::new("git");
         command
@@ -190,20 +190,20 @@ impl Plugin {
             }
         }
 
-        if let Some(old) = old_revision {
-            if let Some(new) = self.current_revision() {
-                return Ok(self.log(old, new));
-            }
+        let new_revision = self.current_revision()?;
+
+        if dbg!(&old_revision) == dbg!(&new_revision) {
+            return Ok(None);
         }
 
-        Ok(None)
+        self.log(old_revision, new_revision).map(|log| Some(log))
     }
 
     pub fn config(&self) -> String {
         format!("try %[ require-module {} ]\n{}\n", self.name, self.config)
     }
 
-    fn current_revision(&self) -> Option<String> {
+    fn current_revision(&self) -> Result<String, Error> {
         let mut command = Command::new("git");
         command
             .current_dir(&self.repository_path)
@@ -212,17 +212,29 @@ impl Plugin {
         #[cfg(test)]
         command.envs(&self.env);
 
-        let output = command.output().ok()?;
-        let mut revision = String::from_utf8_lossy(&output.stdout).to_string();
-        revision.pop(); // Remove \n
-        Some(revision)
-    }
+        let output = command
+            .output()
+            .map_err(|e| Error::Pull(self.name.clone(), e.to_string()))?;
 
-    fn log(&self, old_revision: String, new_revision: String) -> Option<String> {
-        if old_revision == new_revision {
-            return None;
+        if let Some(code) = output.status.code() {
+            if code != 0 {
+                return Err(Error::Pull(
+                    self.name.clone(),
+                    format!(
+                        "git exited with status {}: {}",
+                        code,
+                        String::from_utf8_lossy(&output.stderr)
+                    ),
+                ));
+            }
         }
 
+        let mut revision = String::from_utf8_lossy(&output.stdout).to_string();
+        revision.pop(); // Remove \n
+        Ok(revision)
+    }
+
+    fn log(&self, old_revision: String, new_revision: String) -> Result<String, Error> {
         let range = format!("{old_revision}..{new_revision}");
 
         let mut command = Command::new("git");
@@ -237,8 +249,24 @@ impl Plugin {
         #[cfg(test)]
         command.envs(&self.env);
 
-        let output = command.output().ok()?;
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
+        let output = command
+            .output()
+            .map_err(|e| Error::Pull(self.name.clone(), e.to_string()))?;
+
+        if let Some(code) = output.status.code() {
+            if code != 0 {
+                return Err(Error::Pull(
+                    self.name.clone(),
+                    format!(
+                        "git exited with status {}: {}",
+                        code,
+                        String::from_utf8_lossy(&output.stderr)
+                    ),
+                ));
+            }
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 }
 
@@ -571,7 +599,7 @@ map global normal f ': phantom-selection-add-selection<ret>'
             error,
             Error::Pull(
                 "kakoune-phantom-selection".into(),
-                "git exited with status 6: can't pull changes".into()
+                "git exited with status 5: can't pull changes".into()
             )
         );
     }
@@ -588,6 +616,7 @@ map global normal f ': phantom-selection-add-selection<ret>'
         let link_path = link_dir.join("kakoune-phantom-selection");
 
         let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_PLUGIN_UPDATE", "1".into());
         env.insert(
             "ALMOXARIFE_TEST_REV_PARSE_FAIL",
             "unexpected error!".to_string(),
@@ -612,7 +641,7 @@ map global normal f ': phantom-selection-add-selection<ret>'
             error,
             Error::Pull(
                 "kakoune-phantom-selection".into(),
-                "git exited with status 1: unexpected error!".into()
+                "git exited with status 7: can't retrieve commit SHA".into()
             )
         );
     }
@@ -629,6 +658,7 @@ map global normal f ': phantom-selection-add-selection<ret>'
         let link_path = link_dir.join("kakoune-phantom-selection");
 
         let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_PLUGIN_UPDATE", "1".into());
         env.insert("ALMOXARIFE_TEST_LOG_FAIL", "unexpected error!".to_string());
         env.insert(
             "ALMOXARIFE_TEST_CWD",
@@ -650,7 +680,7 @@ map global normal f ': phantom-selection-add-selection<ret>'
             error,
             Error::Pull(
                 "kakoune-phantom-selection".into(),
-                "git exited with status 1: unexpected error!".into()
+                "git exited with status 8: can't get log of changes".into()
             )
         );
     }

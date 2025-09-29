@@ -24,33 +24,33 @@
 
 (case (. arg 1)
   :clone (do
-           (assert-eq-env "git URL" (. arg 2) :ALMOXARIFE_TEST_LOCATION 4)
-           (assert-eq-env "repo path" (. arg 3) :ALMOXARIFE_TEST_REPO_PATH 5)
+           (assert-eq-env "git URL" (. arg 2) :ALMOXARIFE_TEST_LOCATION 3)
+           (assert-eq-env "repo path" (. arg 3) :ALMOXARIFE_TEST_REPO_PATH 4)
            (os.execute (fmt "mkdir -p %s"
                             (os.getenv :ALMOXARIFE_TEST_REPO_PATH))))
 
   :pull (if (os.getenv :ALMOXARIFE_TEST_PULL_FAIL)
-            (fail-with-code-and-msg 6 "can't pull changes")
+            (fail-with-code-and-msg 5 "can't pull changes")
             (when (> 1 (length arg))
-              (fail-with-code-and-msg 7 (.. "unexpected argument: " (. arg 2)))))
+              (fail-with-code-and-msg 6 (.. "unexpected argument: " (. arg 2)))))
 
   :rev-parse (if (os.getenv :ALMOXARIFE_TEST_REV_PARSE_FAIL)
-                 (fail-with-code-and-msg 8 "can't retrieve commit SHA")
+                 (fail-with-code-and-msg 7 "can't retrieve commit SHA")
 
                  (and (= (os.getenv :ALMOXARIFE_TEST_PLUGIN_UPDATE) :1)
                       ;; We need to know if this is the first or the second call to
                       ;; rev-parse. To do so, we create a dummy file in the first run.
                       ;; Hacky, but works.
-                      (os.execute "ls rev-parse.txt"))
+                      (os.execute "ls rev-parse.txt > /dev/null"))
                  (print "ghijkl")
 
                 :else
                 (do
-                  (print "abcdef")
-                  (os.execute "touch rev-parse.txt")))
+                   (print "abcdef")
+                   (os.execute "touch rev-parse.txt")))
 
   :log (if (os.getenv :ALMOXARIFE_TEST_LOG_FAIL)
-           (fail-with-code-and-msg 9 "can't get log of changes")
+           (fail-with-code-and-msg 8 "can't get log of changes")
            (print "abcdef Some change\nghijk Other change"))
 
-  command (fail-with-code-and-msg 10 (.. "unexpected subcommand: " command)))
+  command (fail-with-code-and-msg 9 (.. "unexpected subcommand: " command)))
