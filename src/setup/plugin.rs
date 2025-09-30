@@ -196,7 +196,7 @@ impl Plugin {
 
         let new_revision = self.current_revision()?;
 
-        if dbg!(&old_revision) == dbg!(&new_revision) {
+        if old_revision == new_revision {
             return Ok(None);
         }
 
