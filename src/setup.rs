@@ -9,6 +9,7 @@ use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::io::Write;
+use std::iter;
 use std::os::unix;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
@@ -19,48 +20,9 @@ use std::result;
 use std::thread;
 use std::time::Duration;
 
-use crate::setup::plugin::Plugin;
-use crate::setup::plugin::PluginTree;
-
-pub mod plugin;
-
-#[derive(Debug)]
-pub struct Error(String);
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl error::Error for Error {}
-
-impl From<io::Error> for Error {
-    fn from(error: io::Error) -> Self {
-        Error(error.to_string())
-    }
-}
-
-impl From<serde_yaml::Error> for Error {
-    fn from(error: serde_yaml::Error) -> Self {
-        Error(error.to_string())
-    }
-}
-
-pub type Result<A> = result::Result<A, Error>;
-
-trait Context<A> {
-    fn context(self, message: &'static str) -> Result<A>;
-}
-
-impl<A, E: error::Error> Context<A> for result::Result<A, E> {
-    fn context(self, message: &'static str) -> Result<A> {
-        match self {
-            Ok(a) => Ok(a),
-            Err(e) => Err(Error(format!("{message}: {e}"))),
-        }
-    }
-}
+use colorized::Color;
+use colorized::Colors;
+use serde::Deserialize;
 
 pub struct Setup {
     /// The path to `almoxarife.yaml`.
@@ -185,39 +147,412 @@ impl Setup {
         Ok(kak)
     }
 
-    pub fn open_config_file(&'_ self) -> Result<Config<'_, File>> {
+    pub fn open_config_file(&self) -> Result<Config<'_>> {
         Config::new(self)
     }
 }
 
-pub struct Config<'setup, R> {
-    file: R,
+pub struct Config<'setup> {
     setup: &'setup Setup,
+    plugins: HashMap<String, PluginTree>,
 }
 
-impl<'setup> Config<'setup, File> {
-    fn new(setup: &Setup) -> Result<Config<'_, File>> {
-        let path = &setup.almoxarife_yaml_path;
-        let file = File::open(path)?;
-        Ok(Config { file, setup })
+impl<'setup> Config<'setup> {
+    fn new(setup: &Setup) -> Result<Config<'_>> {
+        let file = File::open(&setup.almoxarife_yaml_path)?;
+        Config::from_reader(&file, setup)
     }
-}
 
-impl<'setup, R: Read> Config<'setup, R> {
-    pub fn parse_yaml(self) -> Result<Vec<Plugin>> {
-        let tree: HashMap<String, PluginTree> = serde_yaml::from_reader(self.file)?;
+    fn from_reader<'r, R: 'r>(reader: &'r R, setup: &'setup Setup) -> Result<Config<'setup>>
+    where
+        &'r R: Read,
+    {
+        let plugins: HashMap<String, PluginTree> = serde_yaml::from_reader(reader)?;
 
-        if tree.is_empty() {
+        if plugins.is_empty() {
             return Err(Error("configuration file has no YAML element".to_string()));
         }
 
-        let plugins = tree
-            .into_iter()
-            .flat_map(|(name, tree)| tree.plugins(name, None, self.setup))
-            .collect();
-
-        Ok(plugins)
+        Ok(Config { setup, plugins })
     }
+
+    pub fn list_plugins(&self) -> Vec<(&str, PluginStatus)> {
+        self.plugins
+            .iter()
+            .flat_map(|(name, tree)| {
+                iter::once((
+                    name.as_str(),
+                    if tree.disabled {
+                        PluginStatus::Disabled
+                    } else {
+                        PluginStatus::Enabled
+                    },
+                ))
+                .chain(tree.list_children())
+            })
+            .collect()
+    }
+
+    pub fn active_plugins(self) -> Vec<Plugin> {
+        self.plugins
+            .into_iter()
+            .flat_map(|(name, tree)| tree.plugins(name, None, &self.setup))
+            .collect()
+    }
+}
+
+pub enum PluginStatus {
+    Enabled,
+    Disabled,
+}
+
+#[derive(Debug, Deserialize)]
+struct PluginTree {
+    location: String,
+    #[serde(default)]
+    config: String,
+    #[serde(default)]
+    disabled: bool,
+    #[serde(flatten)]
+    children: HashMap<String, PluginTree>,
+}
+
+impl PluginTree {
+    fn plugins(&self, name: String, parent: Option<String>, setup: &Setup) -> Vec<Plugin> {
+        if self.disabled {
+            return Vec::new();
+        }
+
+        iter::once(Plugin::new(name.clone(), self, parent, setup))
+            .chain(self.children.iter().flat_map(move |(child_name, child)| {
+                child.plugins(child_name.clone(), Some(name.clone()), setup)
+            }))
+            .collect()
+    }
+
+    fn list_children(&self) -> Vec<(&str, PluginStatus)> {
+        self.children
+            .iter()
+            .flat_map(|(name, subtree)| {
+                iter::once((
+                    name.as_str(),
+                    if subtree.disabled {
+                        PluginStatus::Disabled
+                    } else {
+                        PluginStatus::Enabled
+                    },
+                ))
+                .chain(subtree.list_children())
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Plugin {
+    pub(super) name: String,
+    /// The parent of this plugin, if any.
+    pub(super) parent: Option<String>,
+    /// Whether this plugin has children.
+    pub(super) has_children: bool,
+    /// Where the plugin is located (the URL of a git repo or a local folder).
+    pub(super) location: String,
+    /// Whether the code is located in a local folder.
+    pub(super) is_local: bool,
+    /// User defined configuration for the plugin.
+    pub(super) config: String,
+    /// The path to the folder containing the plugin's code.
+    pub(super) repository_path: PathBuf,
+    /// The path inside `autoload` where a soft link of the plugin is.
+    pub(super) link_path: PathBuf,
+    // Custom environment variables the plugin setup will consider.
+    #[cfg(test)]
+    pub(super) env: HashMap<&'static str, String>,
+}
+
+fn is_local(location: &str) -> bool {
+    !location.starts_with("https://")
+        && !location.starts_with("http://")
+        && !location.starts_with("git@")
+}
+
+impl Plugin {
+    pub(super) fn new(
+        name: String,
+        node: &PluginTree,
+        parent: Option<String>,
+        setup: &Setup,
+    ) -> Plugin {
+        let link_path = setup.autoload_plugins_dir.join(&name);
+
+        let (is_local, repository_path) = if is_local(&node.location) {
+            (true, PathBuf::from(&node.location))
+        } else {
+            (false, setup.almoxarife_data_dir.join(&name))
+        };
+
+        Plugin {
+            name,
+            parent,
+            has_children: !node.children.is_empty(),
+            config: node.config.clone(),
+            location: node.location.clone(),
+            is_local,
+            repository_path,
+            link_path,
+            #[cfg(test)]
+            env: setup.env.clone(),
+        }
+    }
+
+    fn repository_path_exists(&self) -> bool {
+        fs::metadata(&self.repository_path).is_ok()
+    }
+
+    pub fn update(self) -> Result<Status> {
+        let config = self.config();
+        let name = self.name.clone();
+
+        let status = match (self.is_local, self.repository_path_exists()) {
+            (true, true) => Status::Local { name, config },
+
+            (true, false) => {
+                return Err(Error::link(
+                    name,
+                    format!("the path {} is empty", self.location),
+                ))
+            }
+
+            (false, true) => match self.pull()? {
+                None => Status::Unchanged { name, config },
+                Some(log) => Status::Updated { name, log, config },
+            },
+
+            (false, false) => {
+                self.clone_repo(&self.location)?;
+                Status::Installed { name, config }
+            }
+        };
+
+        self.symlink()?;
+        Ok(status)
+    }
+
+    fn symlink(&self) -> Result<()> {
+        unix::fs::symlink(&self.repository_path, &self.link_path).map_err(|e| {
+            Error::link(
+                self.name.clone(),
+                format!("{}: {}", e, self.link_path.to_string_lossy()),
+            )
+        })
+    }
+
+    fn clone_repo(&self, url: &str) -> Result<()> {
+        let location = format!("{url}.git");
+
+        let mut command = Command::new("git");
+        command
+            .arg("clone")
+            .arg(location)
+            .arg(&self.repository_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+
+        #[cfg(test)]
+        command.envs(&self.env);
+
+        let output = command
+            .output()
+            .map_err(|e| Error::clone(self.name.clone(), e.to_string()))?;
+
+        match output.status.code() {
+            None | Some(0) => Ok(()),
+            Some(code) => Err(Error::clone(
+                self.name.clone(),
+                format!(
+                    "git exited with status {}: {}",
+                    code,
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+            )),
+        }
+    }
+
+    fn pull(&self) -> Result<Option<String>> {
+        let old_revision = self.current_revision()?;
+
+        let mut command = Command::new("git");
+        command
+            .arg("pull")
+            .current_dir(&self.repository_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+
+        #[cfg(test)]
+        command.envs(&self.env);
+
+        let output = command
+            .output()
+            .map_err(|e| Error::pull(self.name.clone(), e.to_string()))?;
+
+        if let Some(code) = output.status.code() {
+            if code != 0 {
+                return Err(Error::pull(
+                    self.name.clone(),
+                    format!(
+                        "git exited with status {}: {}",
+                        code,
+                        String::from_utf8_lossy(&output.stderr)
+                    ),
+                ));
+            }
+        }
+
+        let new_revision = self.current_revision()?;
+
+        if old_revision == new_revision {
+            return Ok(None);
+        }
+
+        self.log(old_revision, new_revision).map(|log| Some(log))
+    }
+
+    pub fn config(&self) -> String {
+        match (&self.parent, self.has_children) {
+            (None, false) => {
+                format!(
+                    "try %[ require-module {plugin} ]
+{config}
+",
+                    plugin = self.name,
+                    config = self.config
+                )
+            }
+
+            (None, true) => format!(
+                "try %[ require-module {plugin} ] catch %[
+    provide-module {plugin} ''
+    require-module {plugin}
+]
+{config}
+",
+                plugin = self.name,
+                config = self.config
+            ),
+
+            (Some(parent), false) => format!(
+                "hook -once global ModuleLoaded {parent} %[
+    try %[ require-module {plugin} ]
+    {config}
+]
+",
+                plugin = self.name,
+                parent = parent,
+                config = self.config
+            ),
+
+            (Some(parent), true) => format!(
+                "hook -once global ModuleLoaded {parent} %[
+    try %[ require-module {plugin} ] catch %[
+        provide-module {plugin} ''
+        require-module {plugin}
+    ]
+    {config}
+]
+",
+                plugin = self.name,
+                parent = parent,
+                config = self.config
+            ),
+        }
+    }
+
+    fn current_revision(&self) -> Result<String> {
+        let mut command = Command::new("git");
+        command
+            .current_dir(&self.repository_path)
+            .args(["rev-parse", "HEAD"]);
+
+        #[cfg(test)]
+        command.envs(&self.env);
+
+        let output = command
+            .output()
+            .map_err(|e| Error::pull(self.name.clone(), e.to_string()))?;
+
+        if let Some(code) = output.status.code() {
+            if code != 0 {
+                return Err(Error::pull(
+                    self.name.clone(),
+                    format!(
+                        "git exited with status {}: {}",
+                        code,
+                        String::from_utf8_lossy(&output.stderr)
+                    ),
+                ));
+            }
+        }
+
+        let mut revision = String::from_utf8_lossy(&output.stdout).to_string();
+        revision.pop(); // Remove \n
+        Ok(revision)
+    }
+
+    fn log(&self, old_revision: String, new_revision: String) -> Result<String> {
+        let range = format!("{old_revision}..{new_revision}");
+
+        let mut command = Command::new("git");
+        command.current_dir(&self.repository_path).args([
+            "log",
+            &range,
+            "--oneline",
+            "--no-decorate",
+            "--reverse",
+        ]);
+
+        #[cfg(test)]
+        command.envs(&self.env);
+
+        let output = command
+            .output()
+            .map_err(|e| Error::pull(self.name.clone(), e.to_string()))?;
+
+        if let Some(code) = output.status.code() {
+            if code != 0 {
+                return Err(Error::pull(
+                    self.name.clone(),
+                    format!(
+                        "git exited with status {}: {}",
+                        code,
+                        String::from_utf8_lossy(&output.stderr)
+                    ),
+                ));
+            }
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Status {
+    Installed {
+        name: String,
+        config: String,
+    },
+    Updated {
+        name: String,
+        log: String,
+        config: String,
+    },
+    Unchanged {
+        name: String,
+        config: String,
+    },
+    Local {
+        name: String,
+        config: String,
+    },
 }
 
 pub struct Kak<W: Write>(W);
@@ -254,265 +589,63 @@ hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
     }
 }
 
-#[cfg(test)]
-mod test {
-    use std::collections::HashMap;
-    use std::env;
-    use std::path::Path;
-    use tempfile::TempDir;
+#[derive(Debug)]
+pub struct Error(String);
 
-    use super::plugin::Plugin;
-    use super::Config;
-    use super::Kak;
-    use super::Setup;
-
-    #[test]
-    fn new_setup() {
-        let setup = Setup::with_env(
-            [
-                ("HOME", "custom-home".to_string()),
-                ("XDG_DATA_HOME", "custom-data".to_string()),
-                ("XDG_CONFIG_HOME", "custom-config".to_string()),
-            ]
-            .into(),
-        );
-
-        assert_eq!(
-            setup.almoxarife_data_dir,
-            Path::new("custom-data/almoxarife")
-        );
-
-        assert_eq!(
-            setup.autoload_plugins_dir,
-            Path::new("custom-config/kak/autoload/almoxarife")
-        );
-
-        assert_eq!(
-            setup.almoxarife_yaml_path,
-            Path::new("custom-config/almoxarife.yaml")
-        );
+impl Error {
+    fn clone(name: String, message: String) -> Error {
+        Error(format!(
+            "{}: could not clone: {message}",
+            name.color(Colors::RedFg)
+        ))
     }
 
-    #[test]
-    fn create_dirs() {
-        let temp_dir = TempDir::new().unwrap();
-        let autoload_dir = temp_dir.path().join("autoload");
-        let autoload_plugins_dir = autoload_dir.join("almoxarife");
-        let almoxarife_data_dir = temp_dir.path().join("data");
-
-        let setup = Setup {
-            almoxarife_data_dir: almoxarife_data_dir.clone(),
-            autoload_dir: autoload_dir.clone(),
-            autoload_plugins_dir: autoload_plugins_dir.clone(),
-            env: add_tests_executables_to_path(),
-            ..Default::default()
-        };
-
-        setup.create_dirs().unwrap();
-
-        assert!(autoload_dir.is_dir());
-        assert!(autoload_plugins_dir.is_dir());
-        assert!(almoxarife_data_dir.is_dir());
-
-        let mut runtime_dir = autoload_dir.clone();
-        runtime_dir.push("rc");
-
-        assert!(runtime_dir.is_symlink());
-        assert!(runtime_dir.metadata().is_ok());
+    fn pull(name: String, message: String) -> Error {
+        Error(format!(
+            "{}: could not update: {message}",
+            name.color(Colors::RedFg)
+        ))
     }
 
-    #[test]
-    fn write_kak_file() {
-        let mut kak = Kak(Vec::new());
-        kak.write_prelude().unwrap();
-        kak.write(b"require-module a-plugin\n").unwrap();
-        kak.write(b"set global an-option 19\n").unwrap();
-        kak.close().unwrap();
-        let expected = r"hook global KakBegin .* %🧺
-add-highlighter shared/almoxarife regions
-add-highlighter shared/almoxarife/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
-add-highlighter shared/almoxarife/ region '^\s*config:[^\n]' '\n' ref kakrc
-hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
-    add-highlighter window/almoxarife ref almoxarife
-    hook -once -always window WinClose .* %{ remove-highlighter window/almoxarife }
+    fn link(name: String, message: String) -> Error {
+        Error(format!(
+            "{}: could not activate: {message}",
+            name.color(Colors::RedFg)
+        ))
+    }
 }
-require-module a-plugin
-set global an-option 19
-🧺";
-        assert_eq!(kak.0, expected.as_bytes());
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
+}
 
-    #[test]
-    fn parse_yaml() {
-        let file = b"
-            luar:
-                location: https://github.com/gustavo-hms/luar
-                config: set-option global luar_interpreter luajit
+impl error::Error for Error {}
 
-                peneira:
-                    location: /home/gustavo-hms/peneira
-                    disabled: false
-
-                    peneira-filters:
-                      location: https://codeberg.org/mbauhardt/peneira-filters
-                      config: |
-                        map global normal <c-p> ': peneira-filters-mode<ret>'
-
-            auto-pairs:
-                location: https://github.com/alexherbo2/auto-pairs.kak
-            ";
-
-        let config = Config {
-            file: file.as_slice(),
-            setup: &Setup::default(),
-        };
-
-        let plugins: HashMap<_, _> = config
-            .parse_yaml()
-            .unwrap()
-            .into_iter()
-            .map(|p| (p.name.clone(), p))
-            .collect();
-
-        let expected: HashMap<_, _> = [
-            (
-                "auto-pairs".to_string(),
-                Plugin {
-                    name: "auto-pairs".into(),
-                    parent: None,
-                    has_children: false,
-                    location: "https://github.com/alexherbo2/auto-pairs.kak".into(),
-                    is_local: false,
-                    config: Default::default(),
-                    repository_path: "~/.local/share/almoxarife/auto-pairs".into(),
-                    link_path: "~/.config/kak/autoload/almoxarife/auto-pairs".into(),
-                    env: Default::default(),
-                },
-            ),
-            (
-                "luar".to_string(),
-                Plugin {
-                    name: "luar".into(),
-                    parent: None,
-                    has_children: true,
-                    location: "https://github.com/gustavo-hms/luar".into(),
-                    is_local: false,
-                    config: "set-option global luar_interpreter luajit".into(),
-                    repository_path: "~/.local/share/almoxarife/luar".into(),
-                    link_path: "~/.config/kak/autoload/almoxarife/luar".into(),
-                    env: Default::default(),
-                },
-            ),
-            (
-                "peneira".to_string(),
-                Plugin {
-                    name: "peneira".into(),
-                    parent: Some("luar".into()),
-                    has_children: true,
-                    location: "/home/gustavo-hms/peneira".into(),
-                    is_local: true,
-                    config: Default::default(),
-                    repository_path: "/home/gustavo-hms/peneira".into(),
-                    link_path: "~/.config/kak/autoload/almoxarife/peneira".into(),
-                    env: Default::default(),
-                },
-            ),
-            (
-                "peneira-filters".to_string(),
-                Plugin {
-                    name: "peneira-filters".into(),
-                    parent: Some("peneira".into()),
-                    has_children: false,
-                    location: "https://codeberg.org/mbauhardt/peneira-filters".into(),
-                    is_local: false,
-                    config: "map global normal <c-p> ': peneira-filters-mode<ret>'\n".into(),
-                    repository_path: "~/.local/share/almoxarife/peneira-filters".into(),
-                    link_path: "~/.config/kak/autoload/almoxarife/peneira-filters".into(),
-                    env: Default::default(),
-                },
-            ),
-        ]
-        .into();
-
-        assert_eq!(plugins, expected);
+impl From<io::Error> for Error {
+    fn from(error: io::Error) -> Self {
+        Error(error.to_string())
     }
+}
 
-    #[test]
-    fn parse_yaml_disabled_plugin() {
-        let file = b"
-            luar:
-                location: https://github.com/gustavo-hms/luar
-                config: set-option global luar_interpreter luajit
-
-                peneira:
-                    location: /home/gustavo-hms/peneira
-                    disabled: true
-
-                    peneira-filters:
-                      location: https://codeberg.org/mbauhardt/peneira-filters
-                      config: |
-                        map global normal <c-p> ': peneira-filters-mode<ret>'
-
-            auto-pairs:
-                location: https://github.com/alexherbo2/auto-pairs.kak
-            ";
-
-        let config = Config {
-            file: file.as_slice(),
-            setup: &Setup::default(),
-        };
-
-        let plugins: HashMap<_, _> = config
-            .parse_yaml()
-            .unwrap()
-            .into_iter()
-            .map(|p| (p.name.clone(), p))
-            .collect();
-
-        let expected: HashMap<_, _> = [
-            (
-                "auto-pairs".to_string(),
-                Plugin {
-                    name: "auto-pairs".into(),
-                    parent: None,
-                    has_children: false,
-                    location: "https://github.com/alexherbo2/auto-pairs.kak".into(),
-                    is_local: false,
-                    config: Default::default(),
-                    repository_path: "~/.local/share/almoxarife/auto-pairs".into(),
-                    link_path: "~/.config/kak/autoload/almoxarife/auto-pairs".into(),
-                    env: Default::default(),
-                },
-            ),
-            (
-                "luar".to_string(),
-                Plugin {
-                    name: "luar".into(),
-                    parent: None,
-                    has_children: true,
-                    location: "https://github.com/gustavo-hms/luar".into(),
-                    is_local: false,
-                    config: "set-option global luar_interpreter luajit".into(),
-                    repository_path: "~/.local/share/almoxarife/luar".into(),
-                    link_path: "~/.config/kak/autoload/almoxarife/luar".into(),
-                    env: Default::default(),
-                },
-            ),
-        ]
-        .into();
-
-        assert_eq!(plugins, expected);
+impl From<serde_yaml::Error> for Error {
+    fn from(error: serde_yaml::Error) -> Self {
+        Error(error.to_string())
     }
+}
 
-    pub fn add_tests_executables_to_path() -> HashMap<&'static str, String> {
-        let project_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-        let project_dir = Path::new(&project_dir);
-        let path = std::env::var("PATH").unwrap();
+pub type Result<A> = result::Result<A, Error>;
 
-        [(
-            "PATH",
-            format!("{}:{path}", project_dir.join("tests").to_string_lossy()),
-        )]
-        .into()
+trait Context<A> {
+    fn context(self, message: &'static str) -> Result<A>;
+}
+
+impl<A, E: error::Error> Context<A> for result::Result<A, E> {
+    fn context(self, message: &'static str) -> Result<A> {
+        match self {
+            Ok(a) => Ok(a),
+            Err(e) => Err(Error(format!("{message}: {e}"))),
+        }
     }
 }

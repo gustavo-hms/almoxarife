@@ -22,6 +22,8 @@ use setup::Setup;
 use crate::setup::plugin;
 
 mod setup;
+#[cfg(test)]
+mod setup_test;
 
 fn main() -> Result<()> {
     let setup = Setup::new();
