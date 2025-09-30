@@ -120,7 +120,7 @@ fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak<File>) -> Result<()> {
     kak.close()?;
 
     if !changes.is_empty() {
-        println!("\n{}\n", "Updates".color(Colors::BrightGreenFg));
+        println!("\nUpdates\n");
         println!("{}", changes.join("\n"));
     }
 
