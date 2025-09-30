@@ -213,7 +213,7 @@ impl<'setup, R: Read> Config<'setup, R> {
 
         let plugins = tree
             .into_iter()
-            .flat_map(|(name, tree)| tree.plugins(name, self.setup))
+            .flat_map(|(name, tree)| tree.plugins(name, None, self.setup))
             .collect();
 
         Ok(plugins)
@@ -379,6 +379,8 @@ set global an-option 19
                 "auto-pairs".to_string(),
                 Plugin {
                     name: "auto-pairs".into(),
+                    parent: None,
+                    has_children: false,
                     location: "https://github.com/alexherbo2/auto-pairs.kak".into(),
                     is_local: false,
                     config: Default::default(),
@@ -391,6 +393,8 @@ set global an-option 19
                 "luar".to_string(),
                 Plugin {
                     name: "luar".into(),
+                    parent: None,
+                    has_children: true,
                     location: "https://github.com/gustavo-hms/luar".into(),
                     is_local: false,
                     config: "set-option global luar_interpreter luajit".into(),
@@ -403,6 +407,8 @@ set global an-option 19
                 "peneira".to_string(),
                 Plugin {
                     name: "peneira".into(),
+                    parent: Some("luar".into()),
+                    has_children: true,
                     location: "/home/gustavo-hms/peneira".into(),
                     is_local: true,
                     config: Default::default(),
@@ -415,6 +421,8 @@ set global an-option 19
                 "peneira-filters".to_string(),
                 Plugin {
                     name: "peneira-filters".into(),
+                    parent: Some("peneira".into()),
+                    has_children: false,
                     location: "https://codeberg.org/mbauhardt/peneira-filters".into(),
                     is_local: false,
                     config: "map global normal <c-p> ': peneira-filters-mode<ret>'\n".into(),
@@ -466,6 +474,8 @@ set global an-option 19
                 "auto-pairs".to_string(),
                 Plugin {
                     name: "auto-pairs".into(),
+                    parent: None,
+                    has_children: false,
                     location: "https://github.com/alexherbo2/auto-pairs.kak".into(),
                     is_local: false,
                     config: Default::default(),
@@ -478,6 +488,8 @@ set global an-option 19
                 "luar".to_string(),
                 Plugin {
                     name: "luar".into(),
+                    parent: None,
+                    has_children: true,
                     location: "https://github.com/gustavo-hms/luar".into(),
                     is_local: false,
                     config: "set-option global luar_interpreter luajit".into(),

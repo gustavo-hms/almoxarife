@@ -26,17 +26,15 @@ pub struct PluginTree {
 }
 
 impl PluginTree {
-    pub fn plugins(&self, name: String, setup: &Setup) -> Vec<Plugin> {
+    pub fn plugins(&self, name: String, parent: Option<String>, setup: &Setup) -> Vec<Plugin> {
         if self.disabled {
             return Vec::new();
         }
 
-        iter::once(Plugin::new(name, self, setup))
-            .chain(
-                self.children
-                    .iter()
-                    .flat_map(|(child_name, child)| child.plugins(child_name.clone(), setup)),
-            )
+        iter::once(Plugin::new(name.clone(), self, parent, setup))
+            .chain(self.children.iter().flat_map(move |(child_name, child)| {
+                child.plugins(child_name.clone(), Some(name.clone()), setup)
+            }))
             .collect()
     }
 }
@@ -44,6 +42,10 @@ impl PluginTree {
 #[derive(Debug, PartialEq)]
 pub struct Plugin {
     pub(super) name: String,
+    /// The parent of this plugin, if any.
+    pub(super) parent: Option<String>,
+    /// Whether this plugin has children.
+    pub(super) has_children: bool,
     /// Where the plugin is located (the URL of a git repo or a local folder).
     pub(super) location: String,
     /// Whether the code is located in a local folder.
@@ -66,7 +68,7 @@ fn is_local(location: &str) -> bool {
 }
 
 impl Plugin {
-    fn new(name: String, node: &PluginTree, setup: &Setup) -> Plugin {
+    fn new(name: String, node: &PluginTree, parent: Option<String>, setup: &Setup) -> Plugin {
         let link_path = setup.autoload_plugins_dir.join(&name);
 
         let (is_local, repository_path) = if is_local(&node.location) {
@@ -77,6 +79,8 @@ impl Plugin {
 
         Plugin {
             name,
+            parent,
+            has_children: !node.children.is_empty(),
             config: node.config.clone(),
             location: node.location.clone(),
             is_local,
@@ -200,7 +204,53 @@ impl Plugin {
     }
 
     pub fn config(&self) -> String {
-        format!("try %[ require-module {} ]\n{}\n", self.name, self.config)
+        match (&self.parent, self.has_children) {
+            (None, false) => {
+                format!(
+                    "try %[ require-module {plugin} ]
+{config}
+",
+                    plugin = self.name,
+                    config = self.config
+                )
+            }
+
+            (None, true) => format!(
+                "try %[ require-module {plugin} ] catch %[
+    provide-module {plugin} ''
+    require-module {plugin}
+]
+{config}
+",
+                plugin = self.name,
+                config = self.config
+            ),
+
+            (Some(parent), false) => format!(
+                "hook -once global ModuleLoaded {parent} %[
+    try %[ require-module {plugin} ]
+    {config}
+]
+",
+                plugin = self.name,
+                parent = parent,
+                config = self.config
+            ),
+
+            (Some(parent), true) => format!(
+                "hook -once global ModuleLoaded {parent} %[
+    try %[ require-module {plugin} ] catch %[
+        provide-module {plugin} ''
+        require-module {plugin}
+    ]
+    {config}
+]
+",
+                plugin = self.name,
+                parent = parent,
+                config = self.config
+            ),
+        }
     }
 
     fn current_revision(&self) -> Result<String, Error> {
@@ -370,6 +420,8 @@ mod test {
 
         let plugin = Plugin {
             name: "kakoune-phantom-selection".into(),
+            parent: None,
+            has_children: false,
             location: url.to_string(),
             is_local: false,
             config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
@@ -385,6 +437,160 @@ mod test {
                 name: "kakoune-phantom-selection".into(),
                 config: r"try %[ require-module kakoune-phantom-selection ]
 map global normal f ': phantom-selection-add-selection<ret>'
+"
+                .into()
+            }
+        );
+
+        assert!(link_path.is_symlink());
+        assert!(link_path.metadata().is_ok());
+    }
+
+    #[test]
+    fn plugin_update_clone_plugin_with_parent() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // Almoxarife should see the dir `repo/kakoune-phantom-selection` does not
+        // exist and clone it.
+        let repository_path = temp_dir.path().join("repo/peneira");
+
+        let link_dir = temp_dir.path().join("link");
+        fs::create_dir(&link_dir).unwrap();
+        let link_path = link_dir.join("peneira");
+
+        let url = "https://github.com/gustavo-hms/peneira";
+
+        let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_LOCATION", url.to_string() + ".git");
+        env.insert(
+            "ALMOXARIFE_TEST_REPO_PATH",
+            repository_path.to_string_lossy().into(),
+        );
+
+        let plugin = Plugin {
+            name: "peneira".into(),
+            parent: Some("luar".into()),
+            has_children: false,
+            location: url.to_string(),
+            is_local: false,
+            config: "set-option global peneira_files_command 'rg --files'".into(),
+            repository_path,
+            link_path: link_path.clone(),
+            env,
+        };
+
+        let status = plugin.update().unwrap();
+        assert_eq!(
+            status,
+            Status::Installed {
+                name: "peneira".into(),
+                config: r"hook -once global ModuleLoaded luar %[
+    try %[ require-module peneira ]
+    set-option global peneira_files_command 'rg --files'
+]
+"
+                .into()
+            }
+        );
+
+        assert!(link_path.is_symlink());
+        assert!(link_path.metadata().is_ok());
+    }
+
+    #[test]
+    fn plugin_update_clone_plugin_with_children() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // Almoxarife should see the dir `repo/kakoune-phantom-selection` does not
+        // exist and clone it.
+        let repository_path = temp_dir.path().join("repo/peneira");
+
+        let link_dir = temp_dir.path().join("link");
+        fs::create_dir(&link_dir).unwrap();
+        let link_path = link_dir.join("peneira");
+
+        let url = "https://github.com/gustavo-hms/peneira";
+
+        let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_LOCATION", url.to_string() + ".git");
+        env.insert(
+            "ALMOXARIFE_TEST_REPO_PATH",
+            repository_path.to_string_lossy().into(),
+        );
+
+        let plugin = Plugin {
+            name: "peneira".into(),
+            parent: None,
+            has_children: true,
+            location: url.to_string(),
+            is_local: false,
+            config: "set-option global peneira_files_command 'rg --files'".into(),
+            repository_path,
+            link_path: link_path.clone(),
+            env,
+        };
+
+        let status = plugin.update().unwrap();
+        assert_eq!(
+            status,
+            Status::Installed {
+                name: "peneira".into(),
+                config: r"try %[ require-module peneira ] catch %[
+    provide-module peneira ''
+    require-module peneira
+]
+set-option global peneira_files_command 'rg --files'
+"
+                .into()
+            }
+        );
+
+        assert!(link_path.is_symlink());
+        assert!(link_path.metadata().is_ok());
+    }
+
+    #[test]
+    fn plugin_update_clone_plugin_with_parent_and_children() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // Almoxarife should see the dir `repo/kakoune-phantom-selection` does not
+        // exist and clone it.
+        let repository_path = temp_dir.path().join("repo/peneira");
+
+        let link_dir = temp_dir.path().join("link");
+        fs::create_dir(&link_dir).unwrap();
+        let link_path = link_dir.join("peneira");
+
+        let url = "https://github.com/gustavo-hms/peneira";
+
+        let mut env = add_tests_executables_to_path();
+        env.insert("ALMOXARIFE_TEST_LOCATION", url.to_string() + ".git");
+        env.insert(
+            "ALMOXARIFE_TEST_REPO_PATH",
+            repository_path.to_string_lossy().into(),
+        );
+
+        let plugin = Plugin {
+            name: "peneira".into(),
+            parent: Some("luar".into()),
+            has_children: true,
+            location: url.to_string(),
+            is_local: false,
+            config: "set-option global peneira_files_command 'rg --files'".into(),
+            repository_path,
+            link_path: link_path.clone(),
+            env,
+        };
+
+        let status = plugin.update().unwrap();
+        assert_eq!(
+            status,
+            Status::Installed {
+                name: "peneira".into(),
+                config: r"hook -once global ModuleLoaded luar %[
+    try %[ require-module peneira ] catch %[
+        provide-module peneira ''
+        require-module peneira
+    ]
+    set-option global peneira_files_command 'rg --files'
+]
 "
                 .into()
             }
@@ -416,6 +622,8 @@ map global normal f ': phantom-selection-add-selection<ret>'
 
         let plugin = Plugin {
             name: "kakoune-phantom-selection".into(),
+            parent: None,
+            has_children: false,
             location: url.to_string(),
             is_local: false,
             config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
@@ -457,6 +665,8 @@ map global normal f ': phantom-selection-add-selection<ret>'
 
         let plugin = Plugin {
             name: "kakoune-phantom-selection".into(),
+            parent: None,
+            has_children: false,
             location: url.to_string(),
             is_local: false,
             config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
@@ -500,6 +710,8 @@ map global normal f ': phantom-selection-add-selection<ret>'
 
         let plugin = Plugin {
             name: "kakoune-phantom-selection".into(),
+            parent: None,
+            has_children: false,
             location: String::new(),
             is_local: false,
             config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
@@ -544,6 +756,8 @@ map global normal f ': phantom-selection-add-selection<ret>'
 
         let plugin = Plugin {
             name: "kakoune-phantom-selection".into(),
+            parent: None,
+            has_children: false,
             location: String::new(),
             is_local: false,
             config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
@@ -586,6 +800,8 @@ map global normal f ': phantom-selection-add-selection<ret>'
 
         let plugin = Plugin {
             name: "kakoune-phantom-selection".into(),
+            parent: None,
+            has_children: false,
             location: String::new(),
             is_local: false,
             config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
@@ -628,6 +844,8 @@ map global normal f ': phantom-selection-add-selection<ret>'
 
         let plugin = Plugin {
             name: "kakoune-phantom-selection".into(),
+            parent: None,
+            has_children: false,
             location: String::new(),
             is_local: false,
             config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
@@ -667,6 +885,8 @@ map global normal f ': phantom-selection-add-selection<ret>'
 
         let plugin = Plugin {
             name: "kakoune-phantom-selection".into(),
+            parent: None,
+            has_children: false,
             location: String::new(),
             is_local: false,
             config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
@@ -706,6 +926,8 @@ map global normal f ': phantom-selection-add-selection<ret>'
 
         let plugin = Plugin {
             name: "kakoune-phantom-selection".into(),
+            parent: None,
+            has_children: false,
             location: String::new(),
             is_local: false,
             config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
