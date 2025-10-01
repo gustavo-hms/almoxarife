@@ -31,16 +31,39 @@ mod setup_test;
 fn main() -> Result<()> {
     let setup = Setup::new();
 
-    if matches!(env::args().nth(1), Some(arg) if arg == "config") {
-        let status = Command::new("kak")
-            .arg(&setup.almoxarife_yaml_path)
-            .status()
-            .context("couldn't run Kakoune")?;
+    match env::args().nth(1) {
+        Some(arg) if arg == "--config" => {
+            let status = Command::new("kak")
+                .arg(&setup.almoxarife_yaml_path)
+                .status()
+                .context("couldn't run Kakoune")?;
 
-        match status.code() {
-            None | Some(0) => (),
-            Some(_) => process::exit(1),
+            match status.code() {
+                None | Some(0) => (),
+                Some(_) => process::exit(1),
+            }
         }
+
+        Some(arg) if arg == "--help" || arg == "-h" => {
+            println!(
+                "A plugin manager for the Kakoune editor.
+
+Usage: al [OPTIONS]
+
+Options:
+ --config
+        Open the configuration file before updating plugins.
+
+ -h, --help
+        Prints this help message.
+
+Running al without any extra option will update your plugins according to the
+configuration file."
+            );
+            return Ok(());
+        }
+
+        _ => (),
     }
 
     let config = setup
