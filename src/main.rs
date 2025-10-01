@@ -3,8 +3,11 @@ use std::error;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::fs;
 use std::fs::File;
 use std::mem;
+use std::path::Path;
+use std::path::PathBuf;
 use std::process;
 use std::process::Command;
 use std::result;
@@ -18,6 +21,8 @@ use setup::Kak;
 use setup::Plugin;
 use setup::Setup;
 use setup::Status;
+
+use crate::setup::PluginError;
 
 mod setup;
 #[cfg(test)]
@@ -49,12 +54,22 @@ fn main() -> Result<()> {
         .context("couldn't configure plugins")?;
 
     let disabled_plugins = config.disabled_plugins();
-    manage_plugins(config.active_plugins(), disabled_plugins, kak)
+    let removed_plugins = config
+        .removed_plugins()
+        .context("couldn't delete directories of removed plugins")?;
+
+    manage_plugins(
+        config.active_plugins(),
+        disabled_plugins,
+        removed_plugins,
+        kak,
+    )
 }
 
 fn manage_plugins(
     plugins: Vec<Plugin>,
     disabled_plugins: Vec<String>,
+    removed_plugins: Vec<PathBuf>,
     mut kak: Kak<File>,
 ) -> Result<()> {
     for disabled in disabled_plugins {
@@ -71,6 +86,15 @@ fn manage_plugins(
 
             s.spawn(move || {
                 let result = plugin.update();
+                sender.send(result)
+            });
+        }
+
+        for removed in removed_plugins {
+            let sender = sender.clone();
+
+            s.spawn(move || {
+                let result = remove_dir(&removed);
                 sender.send(result)
             });
         }
@@ -112,6 +136,10 @@ fn manage_plugins(
                     println!("{name:>20} {}", "local".color(Colors::YellowFg))
                 }
 
+                Ok(Status::Deleted { name }) => {
+                    println!("{name:>20} {}", "removed".color(Colors::CyanFg))
+                }
+
                 Err(error) => {
                     println!("{:>20} {}", error.plugin(), "failed".color(Colors::RedFg));
                     errors.push(error);
@@ -134,6 +162,19 @@ fn manage_plugins(
         Err(Error::Plugins(errors))
     } else {
         Ok(())
+    }
+}
+
+fn remove_dir(path: &Path) -> result::Result<Status, PluginError> {
+    let name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into();
+
+    match fs::remove_dir_all(path) {
+        Ok(_) => Ok(Status::Deleted { name }),
+        Err(e) => Err(PluginError::Delete(name, e.to_string())),
     }
 }
 

@@ -806,3 +806,80 @@ fn plugin_update_pull_link_error() {
         )
     );
 }
+
+#[test]
+fn plugin_remove() {
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let luar = temp_dir.path().join("luar");
+    fs::create_dir_all(&luar).unwrap();
+
+    let peneira = temp_dir.path().join("peneira");
+    fs::create_dir_all(&peneira).unwrap();
+
+    let peneira_filters = temp_dir.path().join("peneira-filters");
+    fs::create_dir_all(&peneira_filters).unwrap();
+
+    let auto_pairs = temp_dir.path().join("auto-pairs");
+    fs::create_dir_all(&auto_pairs).unwrap();
+
+    let file = b"
+            luar:
+                location: https://github.com/gustavo-hms/luar
+                config: set-option global luar_interpreter luajit
+
+                peneira:
+                    location: /home/gustavo-hms/peneira
+                    disabled: true
+
+            auto-pairs:
+                location: https://github.com/alexherbo2/auto-pairs.kak
+            ";
+
+    let setup = Setup {
+        almoxarife_data_dir: temp_dir.path().into(),
+        ..Default::default()
+    };
+
+    let config = setup.config_from_buffer(file.as_slice()).unwrap();
+    let [removed] = config.removed_plugins().unwrap().try_into().unwrap();
+    assert_eq!(removed, peneira_filters);
+}
+
+#[test]
+fn plugin_remove_missing_data_dir() {
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let luar = temp_dir.path().join("luar");
+    fs::create_dir_all(&luar).unwrap();
+
+    let peneira = temp_dir.path().join("peneira");
+    fs::create_dir_all(&peneira).unwrap();
+
+    let peneira_filters = temp_dir.path().join("peneira-filters");
+    fs::create_dir_all(&peneira_filters).unwrap();
+
+    let auto_pairs = temp_dir.path().join("auto-pairs");
+    fs::create_dir_all(&auto_pairs).unwrap();
+
+    let file = b"
+            luar:
+                location: https://github.com/gustavo-hms/luar
+                config: set-option global luar_interpreter luajit
+
+                peneira:
+                    location: /home/gustavo-hms/peneira
+                    disabled: true
+
+            auto-pairs:
+                location: https://github.com/alexherbo2/auto-pairs.kak
+            ";
+
+    let setup = Setup::default();
+    let config = setup.config_from_buffer(file.as_slice()).unwrap();
+    let err = config.removed_plugins().unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "couldn't read ~/.local/share/almoxarife: No such file or directory (os error 2)"
+    );
+}

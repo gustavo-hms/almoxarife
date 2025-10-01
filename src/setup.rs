@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::env;
 use std::error;
 use std::ffi::OsStr;
@@ -196,6 +197,28 @@ impl<'setup> Config<'setup> {
             .flat_map(|(name, plugin)| plugin.disabled_items(name))
             .map(|name| name.to_owned())
             .collect()
+    }
+
+    pub fn removed_plugins(&self) -> Result<Vec<PathBuf>, SetupError> {
+        let all_plugins: HashSet<&str> = self
+            .plugins
+            .iter()
+            .flat_map(|(name, plugin)| iter::once(name.as_str()).chain(plugin.list_children()))
+            .collect();
+
+        let removed = fs::read_dir(&self.setup.almoxarife_data_dir)
+            .context(&format!(
+                "couldn't read {}",
+                self.setup.almoxarife_data_dir.to_string_lossy()
+            ))?
+            .into_iter()
+            .filter_map(|entry| match entry {
+                Ok(e) if !all_plugins.contains(e.file_name().to_str()?) => Some(e.path()),
+                _ => None,
+            })
+            .collect();
+
+        Ok(removed)
     }
 
     pub fn active_plugins(self) -> Vec<Plugin> {
@@ -557,6 +580,9 @@ pub enum Status {
         name: String,
         config: String,
     },
+    Deleted {
+        name: String,
+    },
 }
 
 pub struct Kak<W: Write>(W);
@@ -648,6 +674,7 @@ pub enum PluginError {
     Clone(Name, Message),
     Pull(Name, Message),
     Link(Name, Message),
+    Delete(Name, Message),
 }
 
 impl PluginError {
@@ -656,6 +683,7 @@ impl PluginError {
             PluginError::Clone(name, _) => name,
             PluginError::Pull(name, _) => name,
             PluginError::Link(name, _) => name,
+            PluginError::Delete(name, _) => name,
         }
     }
 }
@@ -683,6 +711,14 @@ impl Display for PluginError {
                 write!(
                     f,
                     "{}: could not activate: {message}",
+                    name.color(Colors::RedFg)
+                )
+            }
+
+            PluginError::Delete(name, message) => {
+                write!(
+                    f,
+                    "{}: could not delete: {message}",
                     name.color(Colors::RedFg)
                 )
             }
