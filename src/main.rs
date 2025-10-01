@@ -58,7 +58,7 @@ fn manage_plugins(
     mut kak: Kak<File>,
 ) -> Result<()> {
     for disabled in disabled_plugins {
-        println!("{disabled:>20} {}", "disabled".color(Colors::CyanFg))
+        println!("{disabled:>20} {}", "disabled".color(Colors::BrightBlackFg))
     }
 
     let (sender, receiver) = mpsc::channel();
