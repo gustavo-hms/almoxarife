@@ -190,20 +190,11 @@ impl<'setup> Config<'setup> {
         Ok(Config { setup, plugins })
     }
 
-    pub fn list_plugins(&self) -> Vec<(&str, PluginStatus)> {
+    pub fn disabled_plugins(&self) -> Vec<String> {
         self.plugins
             .iter()
-            .flat_map(|(name, tree)| {
-                iter::once((
-                    name.as_str(),
-                    if tree.disabled {
-                        PluginStatus::Disabled
-                    } else {
-                        PluginStatus::Enabled
-                    },
-                ))
-                .chain(tree.list_children())
-            })
+            .flat_map(|(name, plugin)| plugin.disabled_items(name))
+            .map(|name| name.to_owned())
             .collect()
     }
 
@@ -213,11 +204,6 @@ impl<'setup> Config<'setup> {
             .flat_map(|(name, tree)| tree.plugins(name, None, &self.setup))
             .collect()
     }
-}
-
-pub enum PluginStatus {
-    Enabled,
-    Disabled,
 }
 
 #[derive(Debug, Deserialize)]
@@ -244,21 +230,30 @@ impl PluginTree {
             .collect()
     }
 
-    fn list_children(&self) -> Vec<(&str, PluginStatus)> {
+    fn list_children(&self) -> Vec<&str> {
         self.children
             .iter()
-            .flat_map(|(name, subtree)| {
-                iter::once((
-                    name.as_str(),
-                    if subtree.disabled {
-                        PluginStatus::Disabled
-                    } else {
-                        PluginStatus::Enabled
-                    },
-                ))
-                .chain(subtree.list_children())
-            })
+            .flat_map(|(name, subtree)| iter::once(name.as_str()).chain(subtree.list_children()))
             .collect()
+    }
+
+    fn disabled_items<'a>(&'a self, current_plugin_name: &'a str) -> Vec<&'a str> {
+        let mut disabled = Vec::new();
+
+        if self.disabled {
+            disabled.push(current_plugin_name);
+
+            for child in self.list_children() {
+                disabled.push(child);
+            }
+        } else {
+            for (name, child) in &self.children {
+                let disabled_children = child.disabled_items(name);
+                disabled.extend_from_slice(&disabled_children);
+            }
+        }
+
+        return disabled;
     }
 }
 

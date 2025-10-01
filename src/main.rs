@@ -48,10 +48,19 @@ fn main() -> Result<()> {
         .create_kak_file_with_prelude()
         .context("couldn't configure plugins")?;
 
-    manage_plugins(config.active_plugins(), kak)
+    let disabled_plugins = config.disabled_plugins();
+    manage_plugins(config.active_plugins(), disabled_plugins, kak)
 }
 
-fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak<File>) -> Result<()> {
+fn manage_plugins(
+    plugins: Vec<Plugin>,
+    disabled_plugins: Vec<String>,
+    mut kak: Kak<File>,
+) -> Result<()> {
+    for disabled in disabled_plugins {
+        println!("{disabled:>20} {}", "disabled".color(Colors::CyanFg))
+    }
+
     let (sender, receiver) = mpsc::channel();
     let mut errors = Vec::new();
     let mut changes = Vec::new();

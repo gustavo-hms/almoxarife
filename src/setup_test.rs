@@ -199,6 +199,10 @@ fn parse_yaml_disabled_plugin() {
 
     let setup = Setup::default();
     let config = setup.config_from_buffer(file.as_slice()).unwrap();
+
+    let disabled = config.disabled_plugins();
+    assert_eq!(disabled, ["peneira", "peneira-filters"]);
+
     let plugins: HashMap<_, _> = config
         .active_plugins()
         .into_iter()
@@ -240,7 +244,7 @@ fn parse_yaml_disabled_plugin() {
     assert_eq!(plugins, expected);
 }
 
-pub fn add_tests_executables_to_path() -> HashMap<&'static str, String> {
+fn add_tests_executables_to_path() -> HashMap<&'static str, String> {
     let project_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let project_dir = Path::new(&project_dir);
     let path = std::env::var("PATH").unwrap();
