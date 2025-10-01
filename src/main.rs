@@ -32,7 +32,7 @@ fn main() -> Result<()> {
     let setup = Setup::new();
 
     match env::args().nth(1) {
-        Some(arg) if arg == "--config" => {
+        Some(arg) if arg == "--config" || arg == "-c" => {
             let status = Command::new("kak")
                 .arg(&setup.almoxarife_yaml_path)
                 .status()
@@ -176,7 +176,7 @@ fn manage_plugins(
     kak.close()?;
 
     if !changes.is_empty() {
-        println!("\nUpdates\n");
+        println!("\nUpdates:\n");
         println!("{}", changes.join("\n"));
     }
 
@@ -216,7 +216,7 @@ impl Display for Error {
 
             Error::Plugins(errors) => {
                 let messages: Vec<_> = errors.into_iter().map(|e| e.to_string()).collect();
-                write!(f, "\n  {}", messages.join("\n  "))
+                write!(f, "\n\n{}", messages.join("\n\n"))
             }
         }
     }

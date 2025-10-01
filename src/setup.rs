@@ -694,7 +694,7 @@ impl Display for PluginError {
             PluginError::Clone(name, message) => {
                 write!(
                     f,
-                    "{}: could not clone: {message}",
+                    "{}:\ncould not clone: {message}",
                     name.color(Colors::RedFg)
                 )
             }
@@ -702,7 +702,7 @@ impl Display for PluginError {
             PluginError::Pull(name, message) => {
                 write!(
                     f,
-                    "{}: could not update: {message}",
+                    "{}:\ncould not update: {message}",
                     name.color(Colors::RedFg)
                 )
             }
@@ -710,7 +710,7 @@ impl Display for PluginError {
             PluginError::Link(name, message) => {
                 write!(
                     f,
-                    "{}: could not activate: {message}",
+                    "{}:\ncould not activate: {message}",
                     name.color(Colors::RedFg)
                 )
             }
@@ -718,7 +718,7 @@ impl Display for PluginError {
             PluginError::Delete(name, message) => {
                 write!(
                     f,
-                    "{}: could not delete: {message}",
+                    "{}:\ncould not delete: {message}",
                     name.color(Colors::RedFg)
                 )
             }
