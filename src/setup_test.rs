@@ -4,7 +4,11 @@ use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
+use crate::setup::Kak;
+use crate::setup::Plugin;
+use crate::setup::PluginError;
 use crate::setup::Setup;
+use crate::setup::Status;
 
 #[test]
 fn new_setup() {
@@ -63,7 +67,7 @@ fn create_dirs() {
 
 #[test]
 fn write_kak_file() {
-    let mut kak = Kak(Vec::new());
+    let mut kak = Kak::with_buffer();
     kak.write_prelude().unwrap();
     kak.write(b"require-module a-plugin\n").unwrap();
     kak.write(b"set global an-option 19\n").unwrap();
@@ -79,7 +83,7 @@ hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
 require-module a-plugin
 set global an-option 19
 🧺";
-    assert_eq!(kak.0, expected.as_bytes());
+    assert_eq!(kak.bytes(), expected.as_bytes());
 }
 
 #[test]
@@ -102,14 +106,10 @@ fn parse_yaml() {
                 location: https://github.com/alexherbo2/auto-pairs.kak
             ";
 
-    let config = Config {
-        file: file.as_slice(),
-        setup: &Setup::default(),
-    };
-
+    let setup = Setup::default();
+    let config = setup.config_from_buffer(file.as_slice()).unwrap();
     let plugins: HashMap<_, _> = config
-        .parse_yaml()
-        .unwrap()
+        .active_plugins()
         .into_iter()
         .map(|p| (p.name.clone(), p))
         .collect();
@@ -197,14 +197,10 @@ fn parse_yaml_disabled_plugin() {
                 location: https://github.com/alexherbo2/auto-pairs.kak
             ";
 
-    let config = Config {
-        file: file.as_slice(),
-        setup: &Setup::default(),
-    };
-
+    let setup = Setup::default();
+    let config = setup.config_from_buffer(file.as_slice()).unwrap();
     let plugins: HashMap<_, _> = config
-        .parse_yaml()
-        .unwrap()
+        .active_plugins()
         .into_iter()
         .map(|p| (p.name.clone(), p))
         .collect();
@@ -493,7 +489,7 @@ fn plugin_update_clone_unexpected_git_fail() {
     let error = plugin.update().unwrap_err();
     assert_eq!(
         error,
-        Error::Clone(
+        PluginError::Clone(
             "kakoune-phantom-selection".into(),
             "git exited with status 1: unexpected error!".into()
         )
@@ -536,7 +532,7 @@ fn plugin_update_clone_link_error() {
     let error = plugin.update().unwrap_err();
     assert_eq!(
         error,
-        Error::Link(
+        PluginError::Link(
             "kakoune-phantom-selection".into(),
             format!(
                 "No such file or directory (os error 2): {}",
@@ -671,7 +667,7 @@ fn plugin_update_pull_unexpected_git_pull_fail() {
     let error = plugin.update().unwrap_err();
     assert_eq!(
         error,
-        Error::Pull(
+        PluginError::Pull(
             "kakoune-phantom-selection".into(),
             "git exited with status 5: can't pull changes".into()
         )
@@ -715,7 +711,7 @@ fn plugin_update_pull_unexpected_git_rev_parse_fail() {
     let error = plugin.update().unwrap_err();
     assert_eq!(
         error,
-        Error::Pull(
+        PluginError::Pull(
             "kakoune-phantom-selection".into(),
             "git exited with status 7: can't retrieve commit SHA".into()
         )
@@ -756,7 +752,7 @@ fn plugin_update_pull_unexpected_git_log_fail() {
     let error = plugin.update().unwrap_err();
     assert_eq!(
         error,
-        Error::Pull(
+        PluginError::Pull(
             "kakoune-phantom-selection".into(),
             "git exited with status 8: can't get log of changes".into()
         )
@@ -797,7 +793,7 @@ fn plugin_update_pull_link_error() {
     let error = plugin.update().unwrap_err();
     assert_eq!(
         error,
-        Error::Link(
+        PluginError::Link(
             "kakoune-phantom-selection".into(),
             format!(
                 "No such file or directory (os error 2): {}",

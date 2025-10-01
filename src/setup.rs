@@ -33,12 +33,12 @@ pub struct Setup {
     // The Almoxarife subdirectory inside `autoload`.
     pub autoload_plugins_dir: PathBuf,
     /// The path to `almoxarife.kak`
-    almoxarife_kak: PathBuf,
+    pub almoxarife_kak: PathBuf,
     // The Kakoune's autoload directory.
-    autoload_dir: PathBuf,
+    pub autoload_dir: PathBuf,
     // Custom environment variables the setup process will consider.
     #[cfg(test)]
-    env: HashMap<&'static str, String>,
+    pub env: HashMap<&'static str, String>,
 }
 
 impl Default for Setup {
@@ -99,7 +99,7 @@ impl Setup {
         }
     }
 
-    pub fn create_dirs(&self) -> Result<()> {
+    pub fn create_dirs(&self) -> Result<(), SetupError> {
         if self.autoload_dir.metadata().is_err() {
             fs::create_dir_all(&self.autoload_dir)?;
 
@@ -120,7 +120,7 @@ impl Setup {
         Ok(())
     }
 
-    fn link_runtime_dir(&self) -> Result<()> {
+    fn link_runtime_dir(&self) -> Result<(), SetupError> {
         let mut command = Command::new("kak");
         command
             .args(["-d", "-s", "almoxarife", "-E"])
@@ -141,14 +141,19 @@ impl Setup {
         Ok(())
     }
 
-    pub fn create_kak_file_with_prelude(&self) -> Result<Kak<File>> {
+    pub fn create_kak_file_with_prelude(&self) -> Result<Kak<File>, SetupError> {
         let mut kak = Kak::new(&self.almoxarife_kak)?;
         kak.write_prelude()?;
         Ok(kak)
     }
 
-    pub fn open_config_file(&self) -> Result<Config<'_>> {
+    pub fn open_config_file(&self) -> Result<Config<'_>, SetupError> {
         Config::new(self)
+    }
+
+    #[cfg(test)]
+    pub fn config_from_buffer(&self, buffer: &[u8]) -> Result<Config<'_>, SetupError> {
+        Config::from_reader(buffer, self)
     }
 }
 
@@ -158,19 +163,28 @@ pub struct Config<'setup> {
 }
 
 impl<'setup> Config<'setup> {
-    fn new(setup: &Setup) -> Result<Config<'_>> {
+    fn new(setup: &Setup) -> Result<Config<'_>, SetupError> {
         let file = File::open(&setup.almoxarife_yaml_path)?;
         Config::from_reader(&file, setup)
     }
 
-    fn from_reader<'r, R: 'r>(reader: &'r R, setup: &'setup Setup) -> Result<Config<'setup>>
+    fn from_reader<'r, R: 'r + ?Sized>(
+        reader: &'r R,
+        setup: &'setup Setup,
+    ) -> Result<Config<'setup>, SetupError>
     where
         &'r R: Read,
     {
-        let plugins: HashMap<String, PluginTree> = serde_yaml::from_reader(reader)?;
+        let plugins: HashMap<String, PluginTree> =
+            serde_yaml::from_reader(reader).context(&format!(
+                "couldn't parse {}",
+                setup.almoxarife_yaml_path.to_string_lossy()
+            ))?;
 
         if plugins.is_empty() {
-            return Err(Error("configuration file has no YAML element".to_string()));
+            return Err(SetupError(
+                "configuration file has no YAML element".to_string(),
+            ));
         }
 
         Ok(Config { setup, plugins })
@@ -250,24 +264,24 @@ impl PluginTree {
 
 #[derive(Debug, PartialEq)]
 pub struct Plugin {
-    pub(super) name: String,
+    pub name: String,
     /// The parent of this plugin, if any.
-    pub(super) parent: Option<String>,
+    pub parent: Option<String>,
     /// Whether this plugin has children.
-    pub(super) has_children: bool,
+    pub has_children: bool,
     /// Where the plugin is located (the URL of a git repo or a local folder).
-    pub(super) location: String,
+    pub location: String,
     /// Whether the code is located in a local folder.
-    pub(super) is_local: bool,
+    pub is_local: bool,
     /// User defined configuration for the plugin.
-    pub(super) config: String,
+    pub config: String,
     /// The path to the folder containing the plugin's code.
-    pub(super) repository_path: PathBuf,
+    pub repository_path: PathBuf,
     /// The path inside `autoload` where a soft link of the plugin is.
-    pub(super) link_path: PathBuf,
+    pub link_path: PathBuf,
     // Custom environment variables the plugin setup will consider.
     #[cfg(test)]
-    pub(super) env: HashMap<&'static str, String>,
+    pub env: HashMap<&'static str, String>,
 }
 
 fn is_local(location: &str) -> bool {
@@ -277,12 +291,7 @@ fn is_local(location: &str) -> bool {
 }
 
 impl Plugin {
-    pub(super) fn new(
-        name: String,
-        node: &PluginTree,
-        parent: Option<String>,
-        setup: &Setup,
-    ) -> Plugin {
+    fn new(name: String, node: &PluginTree, parent: Option<String>, setup: &Setup) -> Plugin {
         let link_path = setup.autoload_plugins_dir.join(&name);
 
         let (is_local, repository_path) = if is_local(&node.location) {
@@ -309,7 +318,7 @@ impl Plugin {
         fs::metadata(&self.repository_path).is_ok()
     }
 
-    pub fn update(self) -> Result<Status> {
+    pub fn update(self) -> Result<Status, PluginError> {
         let config = self.config();
         let name = self.name.clone();
 
@@ -317,7 +326,7 @@ impl Plugin {
             (true, true) => Status::Local { name, config },
 
             (true, false) => {
-                return Err(Error::link(
+                return Err(PluginError::Link(
                     name,
                     format!("the path {} is empty", self.location),
                 ))
@@ -338,16 +347,16 @@ impl Plugin {
         Ok(status)
     }
 
-    fn symlink(&self) -> Result<()> {
+    fn symlink(&self) -> Result<(), PluginError> {
         unix::fs::symlink(&self.repository_path, &self.link_path).map_err(|e| {
-            Error::link(
+            PluginError::Link(
                 self.name.clone(),
                 format!("{}: {}", e, self.link_path.to_string_lossy()),
             )
         })
     }
 
-    fn clone_repo(&self, url: &str) -> Result<()> {
+    fn clone_repo(&self, url: &str) -> Result<(), PluginError> {
         let location = format!("{url}.git");
 
         let mut command = Command::new("git");
@@ -363,11 +372,11 @@ impl Plugin {
 
         let output = command
             .output()
-            .map_err(|e| Error::clone(self.name.clone(), e.to_string()))?;
+            .map_err(|e| PluginError::Clone(self.name.clone(), e.to_string()))?;
 
         match output.status.code() {
             None | Some(0) => Ok(()),
-            Some(code) => Err(Error::clone(
+            Some(code) => Err(PluginError::Clone(
                 self.name.clone(),
                 format!(
                     "git exited with status {}: {}",
@@ -378,7 +387,7 @@ impl Plugin {
         }
     }
 
-    fn pull(&self) -> Result<Option<String>> {
+    fn pull(&self) -> Result<Option<String>, PluginError> {
         let old_revision = self.current_revision()?;
 
         let mut command = Command::new("git");
@@ -393,11 +402,11 @@ impl Plugin {
 
         let output = command
             .output()
-            .map_err(|e| Error::pull(self.name.clone(), e.to_string()))?;
+            .map_err(|e| PluginError::Pull(self.name.clone(), e.to_string()))?;
 
         if let Some(code) = output.status.code() {
             if code != 0 {
-                return Err(Error::pull(
+                return Err(PluginError::Pull(
                     self.name.clone(),
                     format!(
                         "git exited with status {}: {}",
@@ -467,7 +476,7 @@ impl Plugin {
         }
     }
 
-    fn current_revision(&self) -> Result<String> {
+    fn current_revision(&self) -> Result<String, PluginError> {
         let mut command = Command::new("git");
         command
             .current_dir(&self.repository_path)
@@ -478,11 +487,11 @@ impl Plugin {
 
         let output = command
             .output()
-            .map_err(|e| Error::pull(self.name.clone(), e.to_string()))?;
+            .map_err(|e| PluginError::Pull(self.name.clone(), e.to_string()))?;
 
         if let Some(code) = output.status.code() {
             if code != 0 {
-                return Err(Error::pull(
+                return Err(PluginError::Pull(
                     self.name.clone(),
                     format!(
                         "git exited with status {}: {}",
@@ -498,7 +507,7 @@ impl Plugin {
         Ok(revision)
     }
 
-    fn log(&self, old_revision: String, new_revision: String) -> Result<String> {
+    fn log(&self, old_revision: String, new_revision: String) -> Result<String, PluginError> {
         let range = format!("{old_revision}..{new_revision}");
 
         let mut command = Command::new("git");
@@ -515,11 +524,11 @@ impl Plugin {
 
         let output = command
             .output()
-            .map_err(|e| Error::pull(self.name.clone(), e.to_string()))?;
+            .map_err(|e| PluginError::Pull(self.name.clone(), e.to_string()))?;
 
         if let Some(code) = output.status.code() {
             if code != 0 {
-                return Err(Error::pull(
+                return Err(PluginError::Pull(
                     self.name.clone(),
                     format!(
                         "git exited with status {}: {}",
@@ -558,14 +567,25 @@ pub enum Status {
 pub struct Kak<W: Write>(W);
 
 impl Kak<File> {
-    fn new(path: &Path) -> Result<Kak<File>> {
+    fn new(path: &Path) -> Result<Kak<File>, SetupError> {
         let file = File::create(path).context("couldn't create almoxarife.kak file")?;
         Ok(Kak(file))
     }
 }
 
+#[cfg(test)]
+impl Kak<Vec<u8>> {
+    pub fn with_buffer() -> Self {
+        Kak(Vec::new())
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl<W: Write> Kak<W> {
-    pub fn write_prelude(&mut self) -> Result<()> {
+    pub fn write_prelude(&mut self) -> Result<(), SetupError> {
         let prelude = r"hook global KakBegin .* %🧺
 add-highlighter shared/almoxarife regions
 add-highlighter shared/almoxarife/ region '^\s*config:\s+\|' '^\s*\w+:' ref kakrc
@@ -578,74 +598,99 @@ hook -group almoxarife global WinCreate .*almoxarife[.]yaml %{
         self.write(prelude.as_bytes())
     }
 
-    pub fn write(&mut self, data: &[u8]) -> Result<()> {
+    pub fn write(&mut self, data: &[u8]) -> Result<(), SetupError> {
         self.0.write_all(data).context("error writing kak file")
     }
 
-    pub fn close(&mut self) -> Result<()> {
+    pub fn close(&mut self) -> Result<(), SetupError> {
         self.0
             .write_all("🧺".as_bytes())
             .context("error writing kak file")
     }
 }
 
-#[derive(Debug)]
-pub struct Error(String);
+#[derive(Debug, PartialEq)]
+pub struct SetupError(String);
 
-impl Error {
-    fn clone(name: String, message: String) -> Error {
-        Error(format!(
-            "{}: could not clone: {message}",
-            name.color(Colors::RedFg)
-        ))
-    }
-
-    fn pull(name: String, message: String) -> Error {
-        Error(format!(
-            "{}: could not update: {message}",
-            name.color(Colors::RedFg)
-        ))
-    }
-
-    fn link(name: String, message: String) -> Error {
-        Error(format!(
-            "{}: could not activate: {message}",
-            name.color(Colors::RedFg)
-        ))
-    }
-}
-
-impl Display for Error {
+impl Display for SetupError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl error::Error for Error {}
+impl error::Error for SetupError {}
 
-impl From<io::Error> for Error {
+impl From<io::Error> for SetupError {
     fn from(error: io::Error) -> Self {
-        Error(error.to_string())
+        SetupError(error.to_string())
     }
 }
 
-impl From<serde_yaml::Error> for Error {
+impl From<serde_yaml::Error> for SetupError {
     fn from(error: serde_yaml::Error) -> Self {
-        Error(error.to_string())
+        SetupError(error.to_string())
     }
 }
-
-pub type Result<A> = result::Result<A, Error>;
 
 trait Context<A> {
-    fn context(self, message: &'static str) -> Result<A>;
+    fn context(self, message: &str) -> Result<A, SetupError>;
 }
 
 impl<A, E: error::Error> Context<A> for result::Result<A, E> {
-    fn context(self, message: &'static str) -> Result<A> {
+    fn context(self, message: &str) -> Result<A, SetupError> {
         match self {
             Ok(a) => Ok(a),
-            Err(e) => Err(Error(format!("{message}: {e}"))),
+            Err(e) => Err(SetupError(format!("{message}: {e}"))),
+        }
+    }
+}
+
+type Name = String;
+type Message = String;
+
+#[derive(Debug, PartialEq)]
+pub enum PluginError {
+    Clone(Name, Message),
+    Pull(Name, Message),
+    Link(Name, Message),
+}
+
+impl PluginError {
+    pub fn plugin(&self) -> &str {
+        match self {
+            PluginError::Clone(name, _) => name,
+            PluginError::Pull(name, _) => name,
+            PluginError::Link(name, _) => name,
+        }
+    }
+}
+
+impl Display for PluginError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PluginError::Clone(name, message) => {
+                write!(
+                    f,
+                    "{}: could not clone: {message}",
+                    name.color(Colors::RedFg)
+                )
+            }
+
+            PluginError::Pull(name, message) => {
+                write!(
+                    f,
+                    "{}: could not update: {message}",
+                    name.color(Colors::RedFg)
+                )
+            }
+
+            PluginError::Link(name, message) => {
+                write!(
+                    f,
+                    "{}: could not activate: {message}",
+                    name.color(Colors::RedFg)
+                )
+            }
         }
     }
 }

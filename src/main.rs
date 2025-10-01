@@ -13,13 +13,11 @@ use std::thread;
 
 use colorized::Color;
 use colorized::Colors;
+
 use setup::Kak;
-
-use setup::plugin::Plugin;
-use setup::plugin::Status;
+use setup::Plugin;
 use setup::Setup;
-
-use crate::setup::plugin;
+use setup::Status;
 
 mod setup;
 #[cfg(test)]
@@ -44,17 +42,13 @@ fn main() -> Result<()> {
         .open_config_file()
         .context("couldn't open almoxarife.yaml")?;
 
-    let plugins = config.parse_yaml().context(&format!(
-        "couldn't parse {}",
-        setup.almoxarife_yaml_path.to_str().unwrap()
-    ))?;
-
     setup.create_dirs().context("couldn't setup Almoxarife")?;
+
     let kak = setup
         .create_kak_file_with_prelude()
         .context("couldn't configure plugins")?;
 
-    manage_plugins(plugins, kak)
+    manage_plugins(config.active_plugins(), kak)
 }
 
 fn manage_plugins(plugins: Vec<Plugin>, mut kak: Kak<File>) -> Result<()> {
@@ -139,7 +133,7 @@ enum Error {
         error: Box<dyn error::Error>,
         context: String,
     },
-    Plugins(Vec<plugin::Error>),
+    Plugins(Vec<setup::PluginError>),
 }
 
 impl Display for Error {
@@ -163,8 +157,8 @@ impl Debug for Error {
 
 impl error::Error for Error {}
 
-impl From<setup::Error> for Error {
-    fn from(error: setup::Error) -> Self {
+impl From<setup::SetupError> for Error {
+    fn from(error: setup::SetupError) -> Self {
         Error::Context {
             error: Box::new(error),
             context: "couldn't setup plugins".to_string(),
