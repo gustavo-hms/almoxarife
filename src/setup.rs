@@ -336,7 +336,7 @@ impl Plugin {
         fs::metadata(&self.repository_path).is_ok()
     }
 
-    pub fn update(self) -> Result<Status, PluginError> {
+    pub fn manage(self) -> Result<Status, PluginError> {
         let config = self.config();
         let name = self.name.clone();
 

@@ -288,7 +288,7 @@ fn plugin_update_clone() {
         env,
     };
 
-    let status = plugin.update().unwrap();
+    let status = plugin.manage().unwrap();
     assert_eq!(
         status,
         Status::Installed {
@@ -336,7 +336,7 @@ fn plugin_update_clone_plugin_with_parent() {
         env,
     };
 
-    let status = plugin.update().unwrap();
+    let status = plugin.manage().unwrap();
     assert_eq!(
         status,
         Status::Installed {
@@ -386,7 +386,7 @@ fn plugin_update_clone_plugin_with_children() {
         env,
     };
 
-    let status = plugin.update().unwrap();
+    let status = plugin.manage().unwrap();
     assert_eq!(
         status,
         Status::Installed {
@@ -437,7 +437,7 @@ fn plugin_update_clone_plugin_with_parent_and_children() {
         env,
     };
 
-    let status = plugin.update().unwrap();
+    let status = plugin.manage().unwrap();
     assert_eq!(
         status,
         Status::Installed {
@@ -490,7 +490,7 @@ fn plugin_update_clone_unexpected_git_fail() {
         env,
     };
 
-    let error = plugin.update().unwrap_err();
+    let error = plugin.manage().unwrap_err();
     assert_eq!(
         error,
         PluginError::Clone(
@@ -533,7 +533,7 @@ fn plugin_update_clone_link_error() {
         env,
     };
 
-    let error = plugin.update().unwrap_err();
+    let error = plugin.manage().unwrap_err();
     assert_eq!(
         error,
         PluginError::Link(
@@ -578,7 +578,7 @@ fn plugin_update_pull_no_changes() {
         env,
     };
 
-    let status = plugin.update().unwrap();
+    let status = plugin.manage().unwrap();
     assert_eq!(
         status,
         Status::Unchanged {
@@ -624,7 +624,7 @@ fn plugin_update_pull_updates_available() {
         env,
     };
 
-    let status = plugin.update().unwrap();
+    let status = plugin.manage().unwrap();
     assert_eq!(
         status,
         Status::Updated {
@@ -668,7 +668,7 @@ fn plugin_update_pull_unexpected_git_pull_fail() {
         env,
     };
 
-    let error = plugin.update().unwrap_err();
+    let error = plugin.manage().unwrap_err();
     assert_eq!(
         error,
         PluginError::Pull(
@@ -712,7 +712,7 @@ fn plugin_update_pull_unexpected_git_rev_parse_fail() {
         env,
     };
 
-    let error = plugin.update().unwrap_err();
+    let error = plugin.manage().unwrap_err();
     assert_eq!(
         error,
         PluginError::Pull(
@@ -753,7 +753,7 @@ fn plugin_update_pull_unexpected_git_log_fail() {
         env,
     };
 
-    let error = plugin.update().unwrap_err();
+    let error = plugin.manage().unwrap_err();
     assert_eq!(
         error,
         PluginError::Pull(
@@ -794,7 +794,7 @@ fn plugin_update_pull_link_error() {
         env,
     };
 
-    let error = plugin.update().unwrap_err();
+    let error = plugin.manage().unwrap_err();
     assert_eq!(
         error,
         PluginError::Link(

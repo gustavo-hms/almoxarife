@@ -108,7 +108,7 @@ fn manage_plugins(
             let sender = sender.clone();
 
             s.spawn(move || {
-                let result = plugin.update();
+                let result = plugin.manage();
                 sender.send(result)
             });
         }
