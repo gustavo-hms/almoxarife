@@ -7,6 +7,9 @@ use std::fmt::Display;
 use std::fmt::Formatter;
 use std::fs;
 use std::fs::File;
+use std::hash::BuildHasher;
+use std::hash::Hasher;
+use std::hash::RandomState;
 use std::io;
 use std::io::Read;
 use std::io::Write;
@@ -122,9 +125,10 @@ impl Setup {
     }
 
     fn link_runtime_dir(&self) -> Result<(), SetupError> {
+        let session_name = format!("almoxarife{}", RandomState::new().build_hasher().finish());
         let mut command = Command::new("kak");
         command
-            .args(["-d", "-s", "almoxarife", "-E"])
+            .args(["-d", "-s", &session_name, "-E"])
             .arg("echo -to-file /dev/stdout %val[runtime]")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
