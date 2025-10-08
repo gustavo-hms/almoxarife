@@ -1,4 +1,9 @@
-#!/bin/sh
+#!/usr/bin/fish
+
+if test -n "$ALMOXARIFE_TEST_FAIL"
+    printf $ALMOXARIFE_TEST_FAIL >&2
+    exit 1
+end
 
 mkdir -p /tmp/almoxarife-rc/rc
 printf "/tmp/almoxarife-rc"

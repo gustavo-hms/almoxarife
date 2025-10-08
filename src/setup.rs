@@ -35,9 +35,9 @@ pub struct Setup {
     pub autoload_plugins_dir: PathBuf,
     /// The path to `almoxarife.kak`
     pub almoxarife_kak: PathBuf,
-    // The Kakoune's autoload directory.
+    /// The Kakoune's autoload directory.
     pub autoload_dir: PathBuf,
-    // Custom environment variables the setup process will consider.
+    /// Custom environment variables the setup process will consider.
     #[cfg(test)]
     pub env: HashMap<&'static str, String>,
 }
@@ -126,7 +126,8 @@ impl Setup {
         command
             .args(["-d", "-s", "almoxarife", "-E"])
             .arg("echo -to-file /dev/stdout %val[runtime]")
-            .stdout(Stdio::piped());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         #[cfg(test)]
         command.envs(&self.env);
@@ -135,6 +136,13 @@ impl Setup {
         thread::sleep(Duration::from_millis(100));
         kakoune.kill()?;
         let output = kakoune.wait_with_output()?;
+
+        if let Some(code) = output.status.code() {
+            if code != 0 {
+                return Err(SetupError(String::from_utf8_lossy(&output.stderr).into()));
+            }
+        }
+
         let runtime_dir = OsStr::from_bytes(&output.stdout);
         let runtime_dir = PathBuf::from(runtime_dir).join("rc");
         unix::fs::symlink(runtime_dir, self.autoload_dir.join("rc"))?;

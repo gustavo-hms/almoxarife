@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 use tempfile::TempDir;
 
 use crate::setup::Kak;
@@ -63,6 +65,34 @@ fn create_dirs() {
 
     assert!(runtime_dir.is_symlink());
     assert!(runtime_dir.metadata().is_ok());
+}
+
+#[test]
+fn create_dirs_kakoune_error() {
+    let temp_dir = TempDir::new().unwrap();
+    let autoload_dir = temp_dir.path().join("autoload");
+    let autoload_plugins_dir = autoload_dir.join("almoxarife");
+    let almoxarife_data_dir = temp_dir.path().join("data");
+
+    let mut env = add_tests_executables_to_path();
+    env.insert(
+        "ALMOXARIFE_TEST_FAIL",
+        "unable to bind listen socket".into(),
+    );
+
+    let setup = Setup {
+        almoxarife_data_dir: almoxarife_data_dir.clone(),
+        autoload_dir: autoload_dir.clone(),
+        autoload_plugins_dir: autoload_plugins_dir.clone(),
+        env,
+        ..Default::default()
+    };
+
+    let error = setup.create_dirs().unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "unable to detect Kakoune's runtime directory: unable to bind listen socket"
+    );
 }
 
 #[test]
