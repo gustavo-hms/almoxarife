@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::Path;
-use std::thread;
-use std::time::Duration;
 use tempfile::TempDir;
 
 use crate::setup::Kak;
