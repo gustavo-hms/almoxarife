@@ -601,8 +601,8 @@ fn plugin_update_pull_no_changes() {
         location: String::new(),
         is_local: false,
         config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
-        repository_path: repository_path,
-        link_path: link_path,
+        repository_path,
+        link_path,
         env,
     };
 
@@ -647,8 +647,8 @@ fn plugin_update_pull_updates_available() {
         location: String::new(),
         is_local: false,
         config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
-        repository_path: repository_path,
-        link_path: link_path,
+        repository_path,
+        link_path,
         env,
     };
 
@@ -691,8 +691,8 @@ fn plugin_update_pull_unexpected_git_pull_fail() {
         location: String::new(),
         is_local: false,
         config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
-        repository_path: repository_path,
-        link_path: link_path,
+        repository_path,
+        link_path,
         env,
     };
 
@@ -735,8 +735,8 @@ fn plugin_update_pull_unexpected_git_rev_parse_fail() {
         location: String::new(),
         is_local: false,
         config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
-        repository_path: repository_path,
-        link_path: link_path,
+        repository_path,
+        link_path,
         env,
     };
 
@@ -776,8 +776,8 @@ fn plugin_update_pull_unexpected_git_log_fail() {
         location: String::new(),
         is_local: false,
         config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
-        repository_path: repository_path,
-        link_path: link_path,
+        repository_path,
+        link_path,
         env,
     };
 
@@ -817,7 +817,7 @@ fn plugin_update_pull_link_error() {
         location: String::new(),
         is_local: false,
         config: "map global normal f ': phantom-selection-add-selection<ret>'".into(),
-        repository_path: repository_path,
+        repository_path,
         link_path: link_path.clone(),
         env,
     };
