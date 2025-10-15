@@ -223,7 +223,6 @@ impl<'setup> Config<'setup> {
                 "couldn't read {}",
                 self.setup.almoxarife_data_dir.to_string_lossy()
             ))?
-            .into_iter()
             .filter_map(|entry| match entry {
                 Ok(e) if !all_plugins.contains(e.file_name().to_str()?) => Some(e.path()),
                 _ => None,
@@ -236,7 +235,7 @@ impl<'setup> Config<'setup> {
     pub fn active_plugins(self) -> Vec<Plugin> {
         self.plugins
             .into_iter()
-            .flat_map(|(name, tree)| tree.plugins(name, None, &self.setup))
+            .flat_map(|(name, tree)| tree.plugins(name, None, self.setup))
             .collect()
     }
 }
@@ -288,7 +287,7 @@ impl PluginTree {
             }
         }
 
-        return disabled;
+        disabled
     }
 }
 
@@ -453,7 +452,7 @@ impl Plugin {
             return Ok(None);
         }
 
-        self.log(old_revision, new_revision).map(|log| Some(log))
+        self.log(old_revision, new_revision).map(Some)
     }
 
     pub fn config(&self) -> String {

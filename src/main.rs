@@ -28,7 +28,7 @@ mod setup;
 #[cfg(test)]
 mod setup_test;
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() -> Result<()> {
     let setup = Setup::new();
@@ -225,7 +225,7 @@ impl Display for Error {
             Error::Context { error, context } => write!(f, "{}: {}", context, error),
 
             Error::Plugins(errors) => {
-                let messages: Vec<_> = errors.into_iter().map(|e| e.to_string()).collect();
+                let messages: Vec<_> = errors.iter().map(|e| e.to_string()).collect();
                 write!(f, "\n\n{}", messages.join("\n\n"))
             }
         }
