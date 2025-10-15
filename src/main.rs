@@ -28,6 +28,8 @@ mod setup;
 #[cfg(test)]
 mod setup_test;
 
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
 fn main() -> Result<()> {
     let setup = Setup::new();
 
@@ -44,6 +46,11 @@ fn main() -> Result<()> {
             }
         }
 
+        Some(arg) if arg == "--version" || arg == "-v" => {
+            println!("Almoxarife {VERSION}");
+            return Ok(());
+        }
+
         Some(arg) if arg == "--help" || arg == "-h" => {
             println!(
                 "A plugin manager for the Kakoune editor.
@@ -54,8 +61,11 @@ Options:
  --config
         Open the configuration file before updating plugins.
 
+ -v, --version
+        Print Almoxarife version.
+
  -h, --help
-        Prints this help message.
+        Print this help message.
 
 Running al without any extra option will update your plugins according to the
 configuration file."
