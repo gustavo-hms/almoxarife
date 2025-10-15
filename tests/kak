@@ -1,9 +1,9 @@
-#!/usr/bin/fish
+#!/usr/bin/env bash
 
-if test -n "$ALMOXARIFE_TEST_FAIL"
-    printf $ALMOXARIFE_TEST_FAIL >&2
+if [[ -n "${ALMOXARIFE_TEST_FAIL}" ]]; then
+    printf "$ALMOXARIFE_TEST_FAIL" >&2
     exit 1
-end
+fi
 
 mkdir -p /tmp/almoxarife-rc/rc
 printf "/tmp/almoxarife-rc"

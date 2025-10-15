@@ -1,56 +1,72 @@
-#!/usr/bin/env fennel
+#!/usr/bin/env bash
 
-(local fmt string.format)
+fail() {
+    printf "$1" >&2
+    exit $2
+}
 
-(λ fail-with-code-and-msg [code msg]
-  (io.stderr:write msg)
-  (os.exit code))
+if [[ -n "${ALMOXARIFE_TEST_FAIL}" ]]; then
+    fail "${ALMOXARIFE_TEST_FAIL}" 1
+fi
 
-(λ assert-eq-env [description ?value env-var-name error-code]
-  "Assert the provided value is equal to the environment variable whose name is
-  provided. If not, print a message to stderr containing the provided description
-  and exit with the provided error code"
-  (let [env-var (os.getenv env-var-name)]
-    (when (and env-var (not= ?value env-var))
-      (fail-with-code-and-msg error-code
-                              (fmt "wrong %s: %s; expecting %s" description
-                                   ?value env-var)))))
+if [[ -n "${ALMOXARIFE_TEST_CWD}" && "$(pwd)" != "${ALMOXARIFE_TEST_CWD}" ]]; then
+    fail "wrong CWD: $(pwd); expecting ${ALMOXARIFE_TEST_CWD}" 2
+fi
 
-(let [fail (os.getenv :ALMOXARIFE_TEST_FAIL)]
-  (when fail
-    (fail-with-code-and-msg 1 fail)))
+cmd="${1}"
+shift
 
-(assert-eq-env "CWD" (: (io.popen :pwd) :read) :ALMOXARIFE_TEST_CWD 2)
+case "${cmd}" in
+    clone)
+        repo_url="${1}"
+        repo_path="${2}"
 
-(case (. arg 1)
-  :clone (do
-           (assert-eq-env "git URL" (. arg 2) :ALMOXARIFE_TEST_LOCATION 3)
-           (assert-eq-env "repo path" (. arg 3) :ALMOXARIFE_TEST_REPO_PATH 4)
-           (os.execute (fmt "mkdir -p %s"
-                            (os.getenv :ALMOXARIFE_TEST_REPO_PATH))))
+        if [[ -n "${ALMOXARIFE_TEST_LOCATION}" && "${repo_url}" != "${ALMOXARIFE_TEST_LOCATION}" ]]; then
+            fail "wrong git URL: ${repo_url}; expecting ${ALMOXARIFE_TEST_LOCATION}" 3
+        fi
 
-  :pull (if (os.getenv :ALMOXARIFE_TEST_PULL_FAIL)
-            (fail-with-code-and-msg 5 "can't pull changes")
-            (when (> 1 (length arg))
-              (fail-with-code-and-msg 6 (.. "unexpected argument: " (. arg 2)))))
+        if [[ -n "${ALMOXARIFE_TEST_REPO_PATH}" && "${repo_path}" != "${ALMOXARIFE_TEST_REPO_PATH}" ]]; then
+            fail "wrong repo path: ${repo_path}; expecting ${ALMOXARIFE_TEST_REPO_PATH}" 4
+        fi
 
-  :rev-parse (if (os.getenv :ALMOXARIFE_TEST_REV_PARSE_FAIL)
-                 (fail-with-code-and-msg 7 "can't retrieve commit SHA")
+        mkdir -p "${repo_path}"
+        ;;
 
-                 (and (= (os.getenv :ALMOXARIFE_TEST_PLUGIN_UPDATE) :1)
-                      ;; We need to know if this is the first or the second call to
-                      ;; rev-parse. To do so, we create a dummy file in the first run.
-                      ;; Hacky, but works.
-                      (os.execute "ls rev-parse.txt > /dev/null"))
-                 (print "ghijkl")
+    pull)
+        if [[ -n "${ALMOXARIFE_TEST_PULL_FAIL}" ]]; then
+            fail "can't pull changes" 5
+        fi
 
-                :else
-                (do
-                   (print "abcdef")
-                   (os.execute "touch rev-parse.txt")))
+        if (( $# > 1 )); then
+            fail "unexpected argument ${2}" 6
+        fi
+        ;;
 
-  :log (if (os.getenv :ALMOXARIFE_TEST_LOG_FAIL)
-           (fail-with-code-and-msg 8 "can't get log of changes")
-           (print "abcdef Some change\nghijk Other change"))
+    rev-parse)
+        if [[ -n "${ALMOXARIFE_TEST_REV_PARSE_FAIL}" ]]; then
+            fail "can't retrieve commit SHA" 7
+        elif [[ "${ALMOXARIFE_TEST_PLUGIN_UPDATE}" -eq 1 && -e rev-parse.txt ]]; then
+            echo "ghijkl"
+        else
+            echo "abcdef"
+            # We need to know if this is the first or the second call to rev-parse.
+            # To do so, we create a dummy file in the first run. Hacky, but works.
+            touch rev-parse.txt
+        fi
+        ;;
 
-  command (fail-with-code-and-msg 9 (.. "unexpected subcommand: " command)))
+    log)
+        if [[ -n "${ALMOXARIFE_TEST_LOG_FAIL}" ]]; then
+            fail "can't get log of changes" 8
+        else
+            cat <<'EOF'
+abcdef Some change
+ghijk Other change
+EOF
+        fi
+        ;;
+
+    *)
+        fail "unexpected subcommand: ${cmd}" 9
+        ;;
+esac
