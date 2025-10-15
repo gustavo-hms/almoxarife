@@ -2,6 +2,7 @@
 name = "almoxarife"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/gustavo-hms/almoxarife"
 
 [dependencies]
 colorized = "1.0.0"
@@ -14,3 +15,8 @@ tempfile = "3.3"
 [[bin]]
 name = "al"
 path = "src/main.rs"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
