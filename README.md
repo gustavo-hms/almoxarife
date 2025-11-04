@@ -6,6 +6,8 @@ editor](https://kakoune.org/). Different from other plugin managers (like
 plugin but an external executable. You describe your plugins in a configuration
 file and Almoxarife installs and updates them in parallel.
 
+![overview](https://github.com/user-attachments/assets/1fbb3adb-61d4-4ab9-a848-ce7c494a782f)
+
 ## Features
 
 Almoxarife has some interesting features listed bellow.
