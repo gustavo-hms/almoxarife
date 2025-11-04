@@ -1,10 +1,10 @@
 # Almoxarife
 
-Almoxarife is a fast plugin manager for the [Kakoune editor](https://kakoune.org/). Different
-from other plugin managers (like [kak-bundle](https://codeberg.org/jdugan6240/kak-bundle)),
-it's not itself a Kakoune's plugin but an external executable. You describe your
-plugins in a configuration file and Almoxarife installs and updates them in
-parallel.
+Almoxarife is a fast command line plugin manager for the [Kakoune
+editor](https://kakoune.org/). Different from other plugin managers (like
+[kak-bundle](https://codeberg.org/jdugan6240/kak-bundle)), it's not itself a Kakoune's
+plugin but an external executable. You describe your plugins in a configuration
+file and Almoxarife installs and updates them in parallel.
 
 ## Features
 
