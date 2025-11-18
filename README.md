@@ -20,7 +20,9 @@ handled in parallel.
 ### Minimal runtime overhead
 
 Almoxarife is not a plugin itself and doesn't load your plugins using `kak` scripts.
-Instead it relies on Kakoune's builtin `autoload` functionality to load them.
+Instead it relies on Kakoune's builtin
+[autoload](https://github.com/mawww/kakoune/wiki/Running-commands-at-startup#the-autoload-directory)
+functionality to load them.
 
 It only generates a minimal `kak` file to include any configuration scripts you
 write on its `almoxarife.yaml` file, and to ensure dependencies are loaded in the
@@ -102,8 +104,8 @@ The configuration file consists of a yaml document in the following simple forma
 # The key is the name of the plugin. If the plugin defines a module, this should
 # be the module name, because Almoxarife will `require` the module automatically.
 plugin-name:
-  # May be a repository URL or a path for a local directory. It's the only required
-  # field.
+  # May be a repository URL or a full path of a local directory. It's the only
+  # required field.
   location: https://github.com/user/plugin
   # Kakscript code to configure your plugin (optional).
   config: set buffer my-plugin-option true
@@ -136,7 +138,8 @@ state-save:
     }
 
 custom-scripts:
-  location: ~/code/my-kak-scripts
+  # Almoxarife doesn't expand `~`, so a full path is required.
+  location: /home/my-user-name/code/my-kak-scripts
 ```
 
 #### Dependencies
@@ -181,7 +184,7 @@ just download it from the releases page and put it in your PATH.
 
 If you prefer, you can install it via cargo: `cargo install almoxarife`.
 
-### Comparison to kak-bundle
+## Comparison to kak-bundle
 
 kak-bundle is a very well written and featurefull polugin manager. It uses a very
 different approach though. Here I try to summarize the main differences.
@@ -216,4 +219,4 @@ If you rely on any of this functionality, I recommend you give kak-bundle a try.
 
 ## Name
 
-Almoxarife is a portuguese word for a warehouseman.
+Almoxarife means warehouseman in Portuguese.
