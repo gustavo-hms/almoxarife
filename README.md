@@ -6,7 +6,7 @@ editor](https://kakoune.org/). Different from other plugin managers (like
 plugin but an external executable. You describe your plugins in a configuration
 file and Almoxarife installs and updates them in parallel.
 
-![overview](https://github.com/user-attachments/assets/1fbb3adb-61d4-4ab9-a848-ce7c494a782f)
+![overview](https://github.com/user-attachments/assets/836d7543-1ebc-4e0f-a543-b1900270ba61)
 
 ## Features
 
@@ -34,10 +34,15 @@ This design ensures Kakoune loads as fast as it gets.
 
 Almoxarife lists the changelog of every updated plugin.
 
+<img width="1240" height="764" alt="image" src="https://github.com/user-attachments/assets/cdcab6bc-af1f-4f89-adf4-f05584e8d289" />
+
 ### Error handling
 
 Every error it encounters while installing or updating the plugins is shown in a
-comprehensive list, much like the changelog list.
+comprehensive list, much like the changelog list. Additionally, errors on some plugin don't prevent Almoxarife from keeping working.
+
+<img width="1252" height="767" alt="image" src="https://github.com/user-attachments/assets/3caf6508-9820-4592-b156-836d1d12d989" />
+
 
 ### Dependency handling
 
@@ -60,6 +65,9 @@ When you remove a plugin from your configuration file, Almoxarife automatically
 deletes the cloned repo (unless the removed plugin was a local directory, in which
 case no removal takes place).
 
+<img width="1248" height="730" alt="image" src="https://github.com/user-attachments/assets/a91f03f6-262a-4ea2-9d1e-4907acb0dfb0" />
+
+
 ### Zero-friction initial setup
 
 Kakoune has an odd behaviour regarding its `autoload` functionality: if it detects an
@@ -74,10 +82,16 @@ Fortunatelly, Almoxarife automatically handles that for you. So start using
 Almoxarife is as simple as running `al --config`, no matter what your previous
 setup is.
 
+![first-setup](https://github.com/user-attachments/assets/396a48f4-84b7-41b9-ad3b-b9e3dc9e3129)
+
+
 ### Syntax highlighting of the configuration file
 
 Even though the configuration file is an yaml file, you can put kakscript code on
 it, and this code is properly highlighted.
+
+<img width="1249" height="823" alt="image" src="https://github.com/user-attachments/assets/05454d6e-8e84-4e09-95b9-26b0dd24550f" />
+
 
 ## Usage
 
