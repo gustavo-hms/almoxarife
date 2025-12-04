@@ -5,7 +5,7 @@ edition = "2024"
 repository = "https://github.com/gustavo-hms/almoxarife"
 authors = ["Gustavo HMS"]
 description = "A command line package manager for the Kakoune editor"
-licence = "GPL-3.0-or-later"
+license = "GPL-3.0-or-later"
 categories = ["command-line-utilities"]
 keywords = ["kakoune"]
 
