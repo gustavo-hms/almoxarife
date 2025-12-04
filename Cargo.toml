@@ -1,8 +1,13 @@
 [package]
 name = "almoxarife"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/gustavo-hms/almoxarife"
+authors = ["Gustavo HMS"]
+description = "A command line package manager for the Kakoune editor"
+licence = "GPL-3.0-or-later"
+categories = ["command-line-utilities"]
+keywords = ["kakoune"]
 
 [dependencies]
 colorized = "1.0.0"
