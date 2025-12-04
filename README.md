@@ -84,6 +84,12 @@ setup is.
 
 ![first-setup](https://github.com/user-attachments/assets/396a48f4-84b7-41b9-ad3b-b9e3dc9e3129)
 
+### XDG Base Directory compliant
+
+Almoxarife complies with the [XDG Base Directory
+Specification](https://specifications.freedesktop.org/basedir/latest/), what
+means it won't write files and directories to random locations, but to standard
+directories instead.
 
 ### Syntax highlighting of the configuration file
 
