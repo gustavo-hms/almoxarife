@@ -206,7 +206,7 @@ If you prefer, you can install it via cargo: `cargo install almoxarife`.
 
 ## Comparison to kak-bundle
 
-kak-bundle is a very well written and featurefull polugin manager. It uses a very
+kak-bundle is a very well written and featurefull plugin manager. It uses a very
 different approach though. Here I try to summarize the main differences.
 
 While kak-bundle is implemented as a Kakoune plugin, Almoxarife is an external
